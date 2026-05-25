@@ -18,6 +18,7 @@ from ..vrm.vrm_io import VRMFile
 from .face_aligner import FaceAligner, FaceUVTemplate
 from .job_spec import FormInput
 from .texture_recolor import recolor_hsv
+from .vtuber_quality import VtuberQualityGate
 
 if TYPE_CHECKING:
     import trimesh
@@ -120,6 +121,8 @@ class VRMAssembler:
                 _log.warning("ARKit clips add failed (non-fatal): {}", e)
 
         out = vrm.save(output_path)
+        quality = VtuberQualityGate().validate_path(out, atlas_map=atlas)
+        quality.raise_if_failed()
         _log.info("✅ VRM saved: {}", out)
         return out
 
