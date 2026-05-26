@@ -23,6 +23,32 @@
 
 ---
 
+## 🧍 3D 成果與臉型驗證
+
+### 可動 VRM 全身幾何預覽
+
+下圖是經 `VtuberQualityGate` 驗收通過的 `.vrm` 模型六視角預覽，包含前、後、左、右、上、下視角。此圖用 headless 幾何渲染器輸出，用於確認全身 mesh、姿態與方向；實際載入 VSeeFace / Warudo 後會套用 VRM 材質與 toon shader。
+
+<img src="docs/images/vtuber_vrm_six_views.png" width="920" alt="Validated VRM six-view 3D geometry preview">
+
+驗收結果：`54` humanoid bones、`67` blendshape clips、`52` ARKit/Perfect Sync clips、`3` skinned meshes、`560` morph targets。
+
+### VRM 斜角轉面預覽
+
+斜角視圖補足正交圖不易觀察的深度資訊：可直接檢查瀏海與頭部體積、衣服前後厚度、肩膀與手臂的接面，以及不同俯仰角下的輪廓是否自然。
+
+<img src="docs/images/vtuber_vrm_angle_views.png" width="920" alt="Validated VRM diagonal 3D turntable preview">
+
+### 臉型 3D Mesh 多視角
+
+下圖是概念人像經 TripoSR 建立的臉型/頭部 3D mesh 預覽。此階段提供深度與體積資訊給後續 MeshFitter；臉部五官細節仍保留 VRoid 原生 atlas，以避免直接把 2D 臉圖貼進 UV 後產生破面或錯位。
+
+<img src="docs/images/triposr_mesh_preview.png" width="920" alt="TripoSR face and head mesh multi-view preview">
+
+臉型重建驗證：`10,710` vertices / `21,416` faces，已排除早期空心立方體 mesh 的失敗輸出。
+
+---
+
 ## 🧠 核心架構（3D-first）
 
 ```

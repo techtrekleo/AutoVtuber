@@ -192,13 +192,14 @@ def render_view(
     canvas.save(out_path)
 
 
-def make_contact_sheet(paths: list[Path], labels: list[str], out_path: Path) -> None:
+def make_contact_sheet(paths: list[Path], labels: list[str], out_path: Path, cols: int = 3) -> None:
     thumbs = [Image.open(p).convert("RGB").resize((420, 420), Image.LANCZOS) for p in paths]
-    canvas = Image.new("RGB", (3 * 420, 2 * 456), (25, 25, 25))
+    rows = math.ceil(len(thumbs) / cols)
+    canvas = Image.new("RGB", (cols * 420, rows * 456), (25, 25, 25))
     draw = ImageDraw.Draw(canvas)
     for i, (thumb, label) in enumerate(zip(thumbs, labels)):
-        x = (i % 3) * 420
-        y = (i // 3) * 456
+        x = (i % cols) * 420
+        y = (i // cols) * 456
         canvas.paste(thumb, (x, y + 36))
         draw.text((x + 14, y + 10), label, fill=(240, 240, 240))
     canvas.save(out_path)
@@ -232,6 +233,27 @@ def main() -> int:
     sheet = out_dir / f"{src.stem}_six_views.png"
     make_contact_sheet(outputs, labels, sheet)
     print(sheet)
+
+    angle_specs = [
+        ("front-left 3/4", np.array([-0.7, 0.0, -0.7])),
+        ("front-right 3/4", np.array([0.7, 0.0, -0.7])),
+        ("back-left 3/4", np.array([-0.7, 0.0, 0.7])),
+        ("back-right 3/4", np.array([0.7, 0.0, 0.7])),
+        ("high-front 3/4", np.array([0.45, 0.5, -0.75])),
+        ("low-front 3/4", np.array([-0.45, -0.45, -0.75])),
+    ]
+    angle_outputs = []
+    angle_labels = []
+    for name, direction in angle_specs:
+        slug = name.replace(" ", "_").replace("/", "-")
+        out = out_dir / f"{src.stem}_{slug}.png"
+        render_view(triangles, colors, direction, name, out)
+        angle_outputs.append(out)
+        angle_labels.append(name)
+        print(out)
+    angle_sheet = out_dir / f"{src.stem}_angle_views.png"
+    make_contact_sheet(angle_outputs, angle_labels, angle_sheet)
+    print(angle_sheet)
     return 0
 
 
