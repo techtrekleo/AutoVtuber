@@ -343,6 +343,18 @@ pytest -v -k tint     # 只跑 MeshFitter tint mode 測試
 
 ---
 
+## 🔗 相關專案（下游消費者）
+
+AutoVtuber 是 **VRM 角色生成器**。以下是消費這個 `.vrm` 產物的下游專案：
+
+| 專案 | 用途 |
+|---|---|
+| **VDrama**（V 劇坊，開發中）| 把 AutoVtuber 產的 `.vrm` 載入 Three.js + `@pixiv/three-vrm` 瀏覽器場景，配 LLM 拆解小說 / 新聞腳本 → Mixamo 動作庫 + Azure TTS Viseme 中文口型同步 → 輸出「人會動的圖文短劇」`.mp4`。Sprint 0 可行性 spike 已通過：VRM 0.x / 28,292 tris / 54 humanoid bones / 15 expressions 在瀏覽器完整渲染 + animation loop 0 errors |
+
+AutoVtuber 的 quality gate 契約（**54 humanoid bones / 67 blendshape clips / 52 ARKit/Perfect Sync clips / 3 skinned meshes / 560 morph targets**）正是 VDrama 演出層所需的最低介面：54 bones 給 Mixamo 動作重定向、52 ARKit clips 給 Azure Viseme 口型同步、67 blendshape clips 給情緒表演。
+
+---
+
 ## 📝 授權
 
 - 程式碼：MIT License
