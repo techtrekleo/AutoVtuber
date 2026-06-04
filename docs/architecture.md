@@ -2,87 +2,147 @@
 
 > 本檔案描述**當前實作狀態**（不是原計畫）。
 > 原始計畫見 `C:\Users\user\.claude\plans\serialized-scribbling-aurora.md`，與當前狀態之差異見章節「重大架構變動」。
-> 最後更新：2026-04-26 MVP1 完成後
+> 最後更新：**2026-06-04 MVP5 完成 + Reality Checker 三輪 PASS（8.0/10）**
 
 ---
 
-## 🎭 當前實際架構（2026-04-26 MVP1 完成版）
+## 🎭 當前實際架構（2026-06-04 — MVP1-5 全完成）
 
 ```mermaid
 flowchart TB
     USER[👤 使用者表單<br/>髮色/眼色/個性/風格/暱稱]
-    UI[🖥️ PySide6 MainWindow<br/>✅ 已完成]
+    UI[🖥️ PySide6 MainWindow<br/>3 分頁 + 3D 預覽 + Webcam 追蹤 ✅]
 
     subgraph SAFETY["🛡️ 安全層 ✅"]
-        HG[HardwareGuard<br/>1秒輪詢 VRAM/GPU溫度/RAM/磁碟<br/>+ 強制 snapshot 刷新<br/>+ 可恢復 abort]
-        ML[ModelLoader<br/>強制單一重模型於 GPU]
+        HG[HardwareGuard<br/>1秒輪詢 VRAM/GPU溫度/RAM/磁碟<br/>+ hysteresis 3s + 可恢復 abort]
+        ML[ModelLoader<br/>單一重模型於 GPU<br/>Ollama / SDXL / TripoSR]
         HEALTH[HealthLog JSONL]
     end
 
-    subgraph PIPELINE["🤖 生成 Pipeline ✅"]
-        PB[PromptBuilder<br/>Ollama → fallback templated]
-        FG[FaceGenerator<br/>SDXL+AnimagineXL 純 GPU mode<br/>20 steps 1024x1024]
-        FA[FaceAligner<br/>BlazeFace 4 點偵測<br/>+ warpAffine + alpha mask blend]
-        VA[VRMAssembler<br/>load base.vrm → 換臉 → HSV染色 → save]
+    subgraph STAGE1["🔵 Stage 1 — 表單到語意 ✅"]
+        PB[PromptBuilder<br/>3x 重複色 tag + priority-neg<br/>反 AnimagineXL bias]
+        PG[PersonaGenerator<br/>七章節 md + 簽名 Prop<br/>反套路 regex validator]
+        PR[PersonaRuntime<br/>≤500 字 system prompt<br/>+ emotion → blendshape]
+    end
+
+    subgraph STAGE2["🟢 Stage 2 — 概念出圖 + 自動校驗 ✅"]
+        FG[FaceGenerator<br/>SDXL+AnimagineXL 純 GPU<br/>20 steps 1024x1024]
+        CA{{ConceptAssertions<br/>BlazeFace ROI<br/>iris hue ≤ 40°?}}
+        RETRY[seed+7919 retry<br/>若 assertion 失敗]
+    end
+
+    subgraph STAGE25["🟡 Stage 2.5 — 3D mesh ✅"]
+        I23[ImageTo3D / TripoSR<br/>rembg alpha matting<br/>+ PyMCubes shim]
+    end
+
+    subgraph STAGE3["🟠 Stage 3 — VRM 組裝 ✅"]
+        MF[MeshFitter<br/>LAB chroma skin tint<br/>VRoid base atlas]
+        TR[TextureRecolor<br/>HSV hair / iris recolor<br/>value_match=0.7]
+        VA[VRMAssembler<br/>VRM 0.x + ARKit 52<br/>Perfect Sync blendshapes]
     end
 
     subgraph WORKERS["⚙️ Qt Workers ✅"]
         JW[JobWorker QThread]
         MW[MonitorWorker QThread]
+        FT[FaceTracker MediaPipe<br/>webcam → blendshape preview]
     end
 
     subgraph DATA["📦 資料 / 模型"]
-        BASE_VRM[(assets/base_models/<br/>AvatarSample_A/B/C.vrm<br/>+ face_uv_template_*.json<br/>+ face_uv_mask_*.png)]
-        SDXL_W[(models/sdxl/<br/>animagine-xl-4.0/ 6.5GB)]
-        IPA_W[(models/ip_adapter/<br/>3.3GB ⚠️ 載入失敗 fallback OK)]
-        OLLAMA[(Ollama 服務<br/>gemma4:e4b 9.6GB<br/>⚠️ 太大 abort → fallback)]
+        BASE_VRM[(assets/base_models/<br/>AvatarSample_A/B/C.vrm)]
+        SDXL_W[(models/sdxl/<br/>animagine-xl-4.0 6.5GB)]
+        TSR_W[(stabilityai/TripoSR<br/>1.7GB HF cache)]
+        REMBG[(rembg u2net.onnx<br/>176MB)]
+        IPA_W[(IP-Adapter<br/>3.3GB optional)]
+        OLLAMA[(Ollama<br/>gemma4:e2b 7.2GB<br/>qwen2.5:3b 1.9GB)]
     end
 
-    subgraph PRESETS["📚 角色庫 ✅"]
-        PS[PresetStore JSON]
-        OUT[(output/character_*.vrm)]
+    subgraph OUT_GROUP["📤 輸出（4 個檔案）✅"]
+        OUT_VRM[(.vrm)]
+        OUT_PNG[(_concept.png)]
+        OUT_MD[(_persona.md)]
+        OUT_JSON[(_persona_runtime.json<br/>★ MVP5)]
+    end
+
+    subgraph PRESETS["📚 角色庫 + Wizard ✅"]
+        PS[PresetStore import/export]
+        SW[SetupWizard 自動下載<br/>11 項資源偵測]
     end
 
     subgraph PATH["🔧 Windows 修復"]
-        JCT[ASCII junction C:\\avt<br/>解 MediaPipe / cv2 中文路徑]
+        JCT[ASCII junction C:\\avt<br/>解 MediaPipe/cv2 中文路徑]
     end
 
     USER --> UI
     UI --> JW
     UI -->|🛑 STOP| HG
+    UI -.webcam.-> FT
     JW --> PB
+    JW --> PG --> PR
     JW --> FG
-    JW --> FA
+    JW --> I23
+    JW --> MF
     JW --> VA
 
+    PB --> OLLAMA
+    PG --> OLLAMA
+    FG --> SDXL_W
+    FG --> CA
+    CA -->|FAIL| RETRY --> FG
+    CA -->|PASS| I23
+    I23 --> TSR_W
+    I23 -.optional.-> REMBG
+    FG -.optional.-> IPA_W
+    MF --> BASE_VRM
+    TR --> BASE_VRM
+    VA --> OUT_VRM
+    FG -.save.-> OUT_PNG
+    PG -.save.-> OUT_MD
+    PR -.save.-> OUT_JSON
+
     HG -.threading.Event.-> ML
-    HG -.threading.Event.-> PB
     HG -.threading.Event.-> FG
-    ML --> PB
-    ML --> FG
+    HG -.threading.Event.-> I23
+    ML -.序列化.-> OLLAMA
+    ML -.序列化.-> SDXL_W
+    ML -.序列化.-> TSR_W
     HG --> MW
     MW --> UI
 
-    PB --> OLLAMA
-    FG --> SDXL_W
-    FG -.optional.-> IPA_W
-    FA --> BASE_VRM
-    VA --> BASE_VRM
-    VA --> OUT
-    OUT --> PS
+    OUT_VRM --> PS
+    SW -.first-run.-> DATA
 
-    JCT -.runtime.-> FA
-    JCT -.runtime.-> VA
+    JCT -.runtime.-> FG
+    JCT -.runtime.-> I23
+    JCT -.runtime.-> MF
 
     HG --> HEALTH
 
     style SAFETY fill:#ffe0e0
-    style PIPELINE fill:#e0f0ff
+    style STAGE1 fill:#e0e0ff
+    style STAGE2 fill:#e0f0ff
+    style STAGE25 fill:#fff8e0
+    style STAGE3 fill:#ffe8d0
     style WORKERS fill:#e0ffe0
     style DATA fill:#fffde0
+    style OUT_GROUP fill:#e8ffe8
     style PRESETS fill:#f0e0ff
     style PATH fill:#ffe0d0
 ```
+
+---
+
+## 📊 三輪 Reality Checker 審計（2026-06-04 完成）
+
+無人類介入的「agent 三輪自動驗收」對比 Hololive / Nijisanji EN / Vshojo 中段位 VTuber：
+
+| Rubric | v1 | v2 | v3 | 修復重點 |
+|---|---|---|---|---|
+| Concept Art | 6.0 | 7.2 | **7.8** | 3/4 構圖 + signature accessory 提示 |
+| Persona Depth | 5.5 | 7.0 | **8.4** | 簽名 Prop section + concrete catchphrase |
+| VRM Coherence | 4.0 | 8.0 | **8.0** | iris assertion + 3x tag boost（+5 點）|
+| Originality | 4.5 | 5.5 | **8.2** | 反套路 regex + `_STYLE_BACKGROUND` 全改寫（+3.7）|
+| Production | 6.5 | 6.5 | **7.6** | retry loop 證實穩定 |
+| **Mean** | **5.3** | **6.8** | **8.0 🟢 PASS** | |
 
 ---
 
@@ -105,16 +165,10 @@ flowchart TB
 | **Persona Generator** | （無）| Stage 1 與 prompt **共享一次 Ollama 載入**生成中文人設 markdown | 使用者 Q：人設文件需要與外觀一致 + 省 Ollama warm/unload 開銷 |
 | **TripoSR torchmcubes 替換** | 用官方 torchmcubes（CUDA 編譯）| **PyMCubes shim**（CPU only） | 沒 nvcc + 沒 MSVC，原版 build 失敗；單一函式呼叫，包一層即可 |
 | **TripoSR rembg 依賴** | 硬版 import | **lazy-load + patch tsr/utils.py** | rembg 升 numpy→2.x 破壞 mediapipe；SDXL 已是白底不需要去背 |
-
----
-
-## 套件依賴方向（topological）
-
-```
-utils → config → safety → vrm → pipeline → workers → ui → main
-                  └──────────────────────────────┘
-                            （所有層都用 utils 與 config）
-```
+| **臉部紋理 2D 替換 (face_baker)** | UV-aware reverse projection | **deprecated → MVP2 TripoSR 3D mesh** | 2D 沒深度資訊本就有限，標 fallback 不再投入 |
+| **iris 顏色信任 form** | 直接 recolor | 加 **concept_assertions.assert_iris_color_matches_form** + 一次 retry | AnimagineXL bias 強烈偏好藍/棕眼，纯 prompt 壓不住；BlazeFace ROI hue 距 form 40°+ 即重生 |
+| **persona LLM 信任輸出** | 直接寫檔 | **regex trope validator → anti-trope template** | LLM 仍會落 5 個常見 VTuber 套路（賽博/逃離/監控/異世界/從小就對被看見）；命中即 fallback |
+| **persona 單一 markdown 輸出** | `.md` only | + **persona_runtime.json**（MVP5）| Open-LLM-VTuber 借鑑：persona 雙用，下游 chat runtime 需要 ≤500 字 system prompt + emotion 字典 |
 
 ---
 
@@ -139,7 +193,7 @@ utils → config → safety → vrm → pipeline → workers → ui → main
 | `config` | 路徑解析 + TOML 載入 + pydantic 驗證 + 下載清單解析 | Settings / Paths / load_settings / load_manifest |
 | `safety` | 硬體護欄三件組 + 例外定義 + 健康日誌 | HardwareGuard / ModelLoader / HealthLog / Thresholds / SafetyAbort |
 | `vrm` | VRM 0.x 讀寫 + 紋理 atlas 對應 | VRMFile / AtlasMap |
-| `pipeline` | 生成管線（含 MVP2/MVP3 升級）：JobSpec / PromptBuilder / **PersonaGenerator** / FaceGenerator / **ImageTo3D** / **MeshFitter** / **FaceTracker** / VRMAssembler / Orchestrator | Orchestrator.run(JobSpec) → JobResult |
+| `pipeline` | 生成管線（含 MVP2/3/4α/5 升級）：JobSpec / PromptBuilder / **PersonaGenerator** / **PersonaRuntime** ⭐MVP5 / FaceGenerator / **ConceptAssertions** ⭐MVP5 / **ImageTo3D** / **MeshFitter** / **FaceTracker** / VRMAssembler / Orchestrator | Orchestrator.run(JobSpec) → JobResult |
 | `setup` ⭐MVP3 | 資源偵測 + 多來源下載 dispatch（HF / git clone / Ollama） | check_all_resources / SetupDownloader |
 | `presets` | 角色 preset JSON CRUD + import/export（MVP3 補完） | PresetStore（save / load / duplicate / delete / export_preset / import_preset）|
 | `workers` | QThread 封裝（讓 pipeline 不阻塞 UI） | JobWorker / MonitorWorker / DownloadWorker / **SetupDownloadWorker** / **FaceTrackerWorker** |
