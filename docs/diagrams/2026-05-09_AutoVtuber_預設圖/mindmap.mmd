@@ -1,0 +1,69 @@
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#1e1e2e'
+    fontFamily: 'Segoe UI, sans-serif'
+---
+mindmap
+  root((🎭 AutoVtuber<br/>自動化 V皮工坊))
+    🖥️ UI · PySide6
+      FormWidget
+        髮色 / 眼色
+        個性 / 風格
+        暱稱
+      QtQuick3D Preview
+      Export Button
+      Job / Monitor Workers
+    🤖 Pipeline 6 Stages
+      Stage 0 · PromptBuilder
+        Ollama gemma4:e2b
+        warmed_session 共享
+        templated fallback
+      Stage 1 · Persona
+        七章節中文 markdown
+        qwen2.5:3b fallback
+      Stage 2 · FaceGen
+        SDXL 1.0
+        AnimagineXL 4.0 LoRA
+        IP-Adapter Plus Face
+        20 steps 1024x1024
+      Stage 2.5 · Image-to-3D
+        TripoSR
+        rembg alpha matting
+        PyMCubes shim
+        post-load recovery
+      Stage 3 · MeshFitter
+        Tint mode 保留 anime 五官
+        LAB chroma shift
+        Forehead 64x64 sampling
+        UV-aware reverse bake
+      Stage 4 · VRMAssembler
+        VRoid base.vrm
+        trimesh + pygltflib
+        BlendShape 個性映射
+    🛡️ Safety Layer
+      HardwareGuard
+        RAM 90 / 97 percent
+        threading.Event abort
+        hysteresis 3s
+      ModelLoader 單一重模型
+      HealthLog JSONL
+    📦 Models · 已下不重抓
+      SDXL 6.5 GB
+      TripoSR 1.7 GB
+      Ollama gemma4:e2b 7.2 GB
+      VRoid AvatarSample A/B/C
+    🪟 Windows 修復
+      ASCII junction C:\avt
+      解 MediaPipe / cv2 中文路徑
+    📤 Output
+      character_*.vrm
+      persona_*.md
+      character_*.png
+    🎯 Status
+      MVP1 完成 391.7 s
+      MVP2 完成 488 s
+      MVP3 + MVP4 alpha 完成
+      pytest 139 / 14 commits
+      下一步 VSeeFace E04 驗收

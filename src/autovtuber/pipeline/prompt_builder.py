@@ -95,11 +95,11 @@ def _color_strength_modifier(hex_str: str) -> str:
     h_str = hex_str.lstrip("#")
     r, g, b = int(h_str[0:2], 16), int(h_str[2:4], 16), int(h_str[4:6], 16)
     _h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
-    if v < 0.40:
+    if v < 0.45:
         return "dark"
     if v > 0.85:
         return "light"
-    if s > 0.75:
+    if s > 0.60:
         return "vivid"
     return ""
 
@@ -166,31 +166,44 @@ def template_prompt(form: FormInput) -> GeneratedPrompt:
     """純規則組裝 SDXL prompt — 不需要任何 LLM。
 
     當 Ollama 不可用（RAM 不夠、未啟動、模型未安裝）時自動 fallback。
+    重複前置色彩 tag + 強負面 anti-drift，避免 AnimagineXL bias 出藍/棕預設。
     """
+    hair_color = _hex_to_color_tag(form.hair_color_hex, "hair")
+    eye_color = _hex_to_color_tag(form.eye_color_hex, "eyes")
+    hair_strength = _color_strength_modifier(form.hair_color_hex)
+    eye_strength = _color_strength_modifier(form.eye_color_hex)
+    hair_tag = f"{hair_strength} {hair_color}".strip()
+    eye_tag = f"{eye_strength} {eye_color}".strip()
+    eye_color_name = eye_color.split()[0]
     parts = [
+        # 重複眼/髮 tag 3x 提高 CLIP 注意力（diffusers 無 attention weight）
+        eye_tag, eye_tag, eye_tag,
+        hair_tag, hair_tag, hair_tag,
         "1girl",
-        _hex_to_color_tag(form.hair_color_hex, "hair"),
         _HAIR_LENGTH_TAGS.get(form.hair_length, ""),
         _HAIR_STYLE_TAGS.get(form.hair_style, ""),
-        _hex_to_color_tag(form.eye_color_hex, "eyes"),
         _EYE_SHAPE_TAGS.get(form.eye_shape, ""),
         _STYLE_TAGS.get(form.style, ""),
         _PERSONALITY_TAGS.get(form.personality, ""),
         form.extra_freeform.strip(),
-        # 永遠包含
         "looking at viewer",
-        "upper body",
-        "white background",
-        "clean lighting",
+        # 3/4 body shot 讓 silhouette + 配件可見（避免「頭部特寫無記憶點」）
+        "3/4 body portrait, full upper body visible including hands, "
+        "distinctive outfit silhouette, signature accessory",
+        # 軟漸層背景而非純白 — 給角色一點氛圍但不亂搶戲
+        "simple gradient background, soft lighting",
         "masterpiece, best quality, very aesthetic, absurdres",
     ]
     positive = ", ".join(p for p in parts if p)
+    # 強負面 anti-drift：放最前面排斥 AnimagineXL 預設色（blue/brown/green）
+    priority_neg = [c for c in ("blue eyes", "brown eyes", "green eyes")
+                    if not c.startswith(eye_color_name)]
     negative = (
+        ", ".join(priority_neg + priority_neg) + ", " +
         "nsfw, lowres, bad anatomy, bad hands, text, error, "
         "missing fingers, extra digit, fewer digits, cropped, "
         "worst quality, low quality, jpeg artifacts, signature, "
         "watermark, blurry, multiple views, side view, back view, "
-        # 為了 BlazeFace 偵測穩定 — 排除常會干擾偵測的背景元素
         "messy background, abstract background, particles, splatter, "
         "chromatic aberration, watercolor splash, paint splash, halo, "
         "artistic effects, hair covering face, hair over eyes, "
@@ -454,15 +467,29 @@ class PromptBuilder:
         # 用色名（不含 strength）做 contains 判定，更寬鬆
         hair_color_name = hair_color.split()[0]
         eye_color_name = eye_color.split()[0]
+        # 對 AnimagineXL 的色彩偏見要用「重複前置 + 強負面」雙保險
+        # 早期 CLIP token 注意力高，所以放最前面 + 重複 3 次來增加權重（diffusers
+        # 無原生 attention weight 語法，重複是最穩可靠的 boost 方式）。
+        # 即使 LLM 有寫到色名也照樣 boost — 否則 AnimagineXL 容易回到藍/棕默認
+        boost_hair = ", ".join([hair_tag] * 3) if hair_tag else ""
+        boost_eye = ", ".join([eye_tag] * 3) if eye_tag else ""
+        boost_prefix = ", ".join(t for t in [boost_eye, boost_hair] if t)
+        if boost_prefix:
+            positive = f"{boost_prefix}, " + positive
         if hair_color_name not in positive.lower():
-            _log.info("LLM omitted hair color '{}'; force-prepending '{}'", hair_color_name, hair_tag)
-            positive = f"{hair_tag}, " + positive
+            _log.info("LLM omitted hair color '{}'", hair_color_name)
         if eye_color_name not in positive.lower():
-            _log.info("LLM omitted eye color '{}'; force-prepending '{}'", eye_color_name, eye_tag)
-            positive = f"{eye_tag}, " + positive
-        # Anti-drift negative：排除其他髮色 + 其他眼色
+            _log.info("LLM omitted eye color '{}'", eye_color_name)
+        # Anti-drift negative：用「重複前置」強化最常見的偏見色（blue/brown 是 AnimagineXL 預設）
         anti_drift_hair = _other_hair_color_tags(hair_color)
         anti_drift_eye = [f"{c} eyes" for c in _ALL_HAIR_COLORS if c != eye_color_name]
+        # 把使用者指定色「以外的常見預設色」（blue/brown）放最前面強烈排斥
+        priority_negatives = [
+            t for t in anti_drift_eye if t in ("blue eyes", "brown eyes", "green eyes")
+        ]
+        if priority_negatives:
+            priority_negatives_boost = ", ".join(priority_negatives + priority_negatives)
+            negative = priority_negatives_boost + ", " + negative
         for tag_list in (anti_drift_hair, anti_drift_eye):
             if tag_list and not any(t in negative for t in tag_list):
                 negative = negative + ", " + ", ".join(tag_list)

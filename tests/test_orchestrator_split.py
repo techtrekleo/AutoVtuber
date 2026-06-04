@@ -123,9 +123,9 @@ def test_run_concept_runs_only_stage_1_and_2(tmp_path: Path):
     spec = JobSpec(form=make_form())
     concept = orch.run_concept(spec)
 
-    # 確認只跑 stage 1 + 2
+    # 確認只跑 stage 1 + 2（fg 因 iris-color assertion 可能 retry 一次 → 1 或 2 都可接受）
     assert counters["pb"] == 1, "PromptBuilder.enhance_with_persona should run"
-    assert counters["fg"] == 1, "FaceGenerator.generate should run"
+    assert counters["fg"] in (1, 2), "FaceGenerator.generate runs 1x (or 2x if iris-color retry triggered)"
     assert counters["i23"] == 0, "ImageTo3D should NOT run in run_concept"
     assert counters["va"] == 0, "VRMAssembler should NOT run in run_concept"
 
@@ -167,9 +167,9 @@ def test_run_full_e2e_calls_both_methods(tmp_path: Path):
     spec = JobSpec(form=make_form())
     result = orch.run(spec)
 
-    # 全部 4 個 mock 都被呼叫
+    # 全部 4 個 mock 都被呼叫（fg 可能 1 或 2 次，視 iris-color assertion 是否觸發 retry）
     assert counters["pb"] == 1
-    assert counters["fg"] == 1
+    assert counters["fg"] in (1, 2)
     assert counters["i23"] == 1
     assert counters["va"] == 1
     assert result.succeeded

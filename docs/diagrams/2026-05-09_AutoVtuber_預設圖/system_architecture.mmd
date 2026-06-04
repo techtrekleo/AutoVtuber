@@ -1,0 +1,87 @@
+flowchart TB
+    USER([👤 使用者表單<br/>髮色 / 眼色 / 個性 / 風格 / 暱稱])
+
+    subgraph UI["🖥️ PySide6 桌面 UI"]
+        FORM[FormWidget 表單蒐集]
+        PREVIEW[QtQuick3D Preview<br/>即時 3D 預覽]
+        EXPORT[Export Button]
+    end
+
+    subgraph PIPELINE["🤖 Pipeline · 6 Stages"]
+        S0[Stage 0<br/>PromptBuilder<br/>warmed_session]
+        S1[Stage 1<br/>Persona Generator<br/>七章節中文 .md]
+        S2[Stage 2<br/>FaceGenerator<br/>SDXL + AnimagineXL]
+        S25[Stage 2.5<br/>Image-to-3D<br/>TripoSR + rembg alpha]
+        S3[Stage 3<br/>MeshFitter<br/>LAB chroma tint mode]
+        S4[Stage 4<br/>VRMAssembler<br/>VRoid base + 換臉]
+    end
+
+    subgraph SAFETY["🛡️ Safety Layer"]
+        HG[HardwareGuard<br/>RAM 90 / 97 % threshold<br/>1s polling]
+        ML[ModelLoader<br/>單一重模型於 GPU]
+        HEALTH[HealthLog JSONL]
+    end
+
+    subgraph DATA["📦 Models / Resources"]
+        SDXL[(SDXL 6.5 GB<br/>animagine-xl-4.0)]
+        TSR[(TripoSR 1.7 GB<br/>HF cache)]
+        OLLAMA[(Ollama<br/>gemma4:e2b 7.2 GB<br/>qwen2.5:3b 1.9 GB)]
+        BASE[(VRoid base.vrm<br/>AvatarSample A/B/C)]
+    end
+
+    subgraph WORKERS["⚙️ Qt Workers"]
+        JW[JobWorker QThread]
+        MW[MonitorWorker QThread]
+    end
+
+    subgraph OUT["📤 Output · output/"]
+        VRM[character_*.vrm]
+        MD[persona_*.md]
+        PNG[character_*.png]
+    end
+
+    USER --> FORM
+    FORM --> JW
+    JW --> S0
+    S0 --> S1
+    S0 --> S2
+    S2 --> S25
+    S25 --> S3
+    S3 --> S4
+
+    S4 --> VRM
+    S1 --> MD
+    S2 --> PNG
+
+    BASE --> S4
+    SDXL --> S2
+    TSR --> S25
+    OLLAMA --> S0
+    OLLAMA --> S1
+
+    HG -. abort .-> S2
+    HG -. abort .-> S25
+    HG -. abort .-> S3
+    ML --> S2
+    ML --> S25
+    JW -.-> HEALTH
+    MW -.poll.-> HG
+
+    VRM --> PREVIEW
+    PREVIEW --> EXPORT
+
+    classDef userCls fill:#74c7ec,stroke:#1e66f5,color:#1e1e2e,stroke-width:2px
+    classDef uiCls fill:#cba6f7,stroke:#7287fd,color:#1e1e2e
+    classDef pipeCls fill:#f9e2af,stroke:#df8e1d,color:#1e1e2e
+    classDef safetyCls fill:#fab387,stroke:#fe640b,color:#1e1e2e
+    classDef dataCls fill:#a6e3a1,stroke:#40a02b,color:#1e1e2e
+    classDef outCls fill:#f5c2e7,stroke:#ea76cb,color:#1e1e2e
+    classDef workerCls fill:#94e2d5,stroke:#179299,color:#1e1e2e
+
+    class USER userCls
+    class FORM,PREVIEW,EXPORT uiCls
+    class S0,S1,S2,S25,S3,S4 pipeCls
+    class HG,ML,HEALTH safetyCls
+    class SDXL,TSR,OLLAMA,BASE dataCls
+    class VRM,MD,PNG outCls
+    class JW,MW workerCls

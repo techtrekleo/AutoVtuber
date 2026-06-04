@@ -124,6 +124,14 @@ class Orchestrator:
                     progress_cb("01_prompt_persona", 1, 2)
                 persona_path = self._paths.output / f"{spec.output_basename}_persona.md"
                 self._persona.save(persona_md, persona_path)
+                # MVP5：把 persona 萃取成 runtime JSON（給未來 chat 接口用）
+                try:
+                    from .persona_runtime import build_persona_runtime, save_persona_runtime
+                    rt = build_persona_runtime(persona_md)
+                    runtime_path = self._paths.output / f"{spec.output_basename}_persona_runtime.json"
+                    save_persona_runtime(rt, runtime_path)
+                except Exception:  # noqa: BLE001
+                    _log.exception("persona_runtime save failed (non-fatal)")
                 if progress_cb:
                     progress_cb("01_prompt_persona", 2, 2)
             stages.append(StageResult(
@@ -134,8 +142,9 @@ class Orchestrator:
             ))
             total_elapsed += t.elapsed_seconds
 
-            # Stage 2: SDXL face image
+            # Stage 2: SDXL face image — 含 iris-color assertion 一次重生機會
             self._guard.check_or_raise()
+            from .concept_assertions import assert_iris_color_matches_form
             with StageTimer("02_face_gen") as t:
                 def _step_progress(cur: int, tot: int):
                     if progress_cb:
@@ -145,6 +154,30 @@ class Orchestrator:
                     reference_photo_path=spec.form.reference_photo_path,
                     progress_cb=_step_progress,
                 )
+                # Iris 色彩斷言：若 concept 眼色與表單偏差太大，重生一次（避免 AnimagineXL bias）
+                iris_check = assert_iris_color_matches_form(face_img, spec.form)
+                if not iris_check.passed:
+                    _log.warning(
+                        "Iris color assertion FAILED on first try: {} — regenerating with different seed",
+                        iris_check.detail,
+                    )
+                    # 重生：略改 seed 提示模型 explore 不同樣本
+                    retry_prompt = prompt.model_copy(
+                        update={"seed": (prompt.seed + 7919) if prompt.seed >= 0 else -1}
+                    )
+                    face_img = self._fg.generate(
+                        prompt=retry_prompt,
+                        reference_photo_path=spec.form.reference_photo_path,
+                        progress_cb=_step_progress,
+                    )
+                    iris_check_retry = assert_iris_color_matches_form(face_img, spec.form)
+                    _log.warning(
+                        "After regeneration: {} ({})",
+                        "PASS" if iris_check_retry.passed else "still FAIL",
+                        iris_check_retry.detail,
+                    )
+                else:
+                    _log.info("Iris color check OK: {}", iris_check.detail)
             stages.append(StageResult(
                 name="02_face_gen",
                 succeeded=True,

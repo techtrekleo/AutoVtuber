@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>AutoVtuber · System Architecture</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI","Microsoft JhengHei",sans-serif;background:#11111b;color:#cdd6f4;line-height:1.55}
+  header{padding:18px 28px;border-bottom:1px solid #313244;background:#181825;position:sticky;top:0;z-index:10}
+  header h1{margin:0;font-size:20px;font-weight:600}
+  header .meta{font-size:12px;color:#7f849c;margin-top:4px}
+  nav{display:flex;flex-wrap:wrap;gap:6px;padding:12px 28px;background:#181825;border-bottom:1px solid #313244;position:sticky;top:60px;z-index:9}
+  nav button{background:#313244;color:#cdd6f4;border:1px solid #45475a;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-family:inherit;transition:all .15s}
+  nav button:hover{background:#45475a}
+  nav button.active{background:#89b4fa;color:#11111b;border-color:#89b4fa;font-weight:600}
+  /* Mind-map branch → tab linkage: clicked mindmap node lights up its owning sub-diagram tab (static yellow, no animation) */
+  nav button.mm-related{background:#f9e2af !important;color:#1e1e2e !important;border-color:#df8e1d !important;font-weight:700;box-shadow:0 0 0 2px rgba(249,226,175,.55)}
+  main{display:grid;grid-template-columns:1fr 280px;height:calc(100vh - 130px)}
+  .stage{position:relative;overflow:hidden}
+  .panel{display:none;height:100%;position:relative}
+  .panel.active{display:block}
+  .panel-header{position:absolute;top:14px;left:18px;background:rgba(24,24,37,.85);padding:8px 14px;border-radius:6px;z-index:5;font-size:13px;border:1px solid #313244;max-width:60%}
+  .panel-header strong{color:#89b4fa}
+  .panel-header .desc{color:#a6adc8;font-size:12px;margin-top:3px}
+  .controls{position:absolute;top:14px;right:18px;display:flex;gap:6px;z-index:5}
+  .controls button{background:#313244;color:#cdd6f4;border:1px solid #45475a;width:34px;height:34px;border-radius:6px;cursor:pointer;font-size:16px}
+  .controls button:hover{background:#45475a}
+  .diagram-host{width:100%;height:100%;overflow:hidden;background:#11111b}
+  .mermaid{width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+  .mermaid svg{max-width:100%;max-height:100%}
+
+  /* Legend sidebar */
+  aside.legend{background:#181825;border-left:1px solid #313244;padding:16px 18px;overflow-y:auto;font-size:12px}
+  aside.legend h3{margin:0 0 8px 0;font-size:13px;color:#89b4fa;font-weight:600;letter-spacing:.3px}
+  aside.legend section{margin-bottom:18px}
+  aside.legend .row{display:flex;align-items:center;gap:8px;margin:5px 0}
+  aside.legend .swatch{width:20px;height:14px;border-radius:3px;flex-shrink:0;border:1px solid rgba(255,255,255,.15)}
+  aside.legend .shape{width:24px;height:18px;border:2px solid #cdd6f4;background:#313244;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:#cdd6f4}
+  aside.legend .shape.rect{border-radius:0}
+  aside.legend .shape.round{border-radius:9px}
+  aside.legend .shape.cyl{border-radius:50%/14px;background:linear-gradient(180deg,#313244 0,#1e1e2e 100%)}
+  aside.legend .shape.stadium{border-radius:9px;width:30px}
+  aside.legend .line-sample{width:36px;height:14px;flex-shrink:0;display:flex;align-items:center}
+  aside.legend .line-sample svg{width:100%;height:100%}
+  aside.legend .label{flex:1;line-height:1.3}
+  aside.legend .label small{color:#7f849c;display:block;font-size:10.5px}
+
+  footer{padding:10px 28px;font-size:11px;color:#6c7086;border-top:1px solid #313244;background:#181825}
+  code{background:#313244;padding:1px 6px;border-radius:3px;font-size:12px}
+
+  /* Mindmap interactive highlight states */
+  .mm-interactive g.mindmap-node{cursor:pointer;transition:opacity .25s ease, filter .25s ease}
+  .mm-interactive g.mindmap-node.mm-dim{opacity:.18}
+  /* Ancestors: red/pink — warm "origin" lineage upstream toward root */
+  .mm-interactive g.mindmap-node.mm-anc rect,
+  .mm-interactive g.mindmap-node.mm-anc circle,
+  .mm-interactive g.mindmap-node.mm-anc path{stroke:#f38ba8 !important;stroke-width:2.5px !important}
+  .mm-interactive g.mindmap-node.mm-anc text{font-weight:600;fill:#f38ba8}
+  /* Descendants: blue — cool downstream subtree */
+  .mm-interactive g.mindmap-node.mm-desc rect,
+  .mm-interactive g.mindmap-node.mm-desc circle,
+  .mm-interactive g.mindmap-node.mm-desc path{stroke:#89b4fa !important;stroke-width:2.5px !important}
+  .mm-interactive g.mindmap-node.mm-desc text{font-weight:600;fill:#89b4fa}
+  /* Focus: yellow with drop-shadow */
+  .mm-interactive g.mindmap-node.mm-focus rect,
+  .mm-interactive g.mindmap-node.mm-focus circle,
+  .mm-interactive g.mindmap-node.mm-focus path{stroke:#f9e2af !important;stroke-width:3.5px !important;filter:drop-shadow(0 0 6px #f9e2af)}
+  .mm-interactive g.mindmap-node.mm-focus text{font-weight:700}
+  /* Edges */
+  .mm-interactive g.edges path{transition:opacity .25s ease, stroke .25s ease}
+  .mm-interactive g.edges path.mm-dim{opacity:.12}
+  .mm-interactive g.edges path.mm-anc{stroke:#f38ba8 !important;stroke-width:2.5px !important;opacity:1}
+  .mm-interactive g.edges path.mm-desc{stroke:#89b4fa !important;stroke-width:2.5px !important;opacity:1}
+
+  .mm-hint{position:absolute;bottom:14px;left:18px;background:rgba(24,24,37,.95);border:1px solid #45475a;padding:10px 14px;border-radius:6px;font-size:12px;color:#cdd6f4;z-index:5;display:flex;flex-direction:column;gap:6px;line-height:1.4}
+  .mm-hint .row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+  .mm-hint .tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:11px;font-size:11px;font-weight:600;letter-spacing:.2px}
+  .mm-hint .tag.focus{background:#f9e2af;color:#1e1e2e;box-shadow:0 0 0 1px #df8e1d}
+  .mm-hint .tag.anc{background:#f38ba8;color:#1e1e2e}
+  .mm-hint .tag.desc{background:#89b4fa;color:#1e1e2e}
+  .mm-hint .tag.dim{background:#6c7086;color:#cdd6f4;opacity:.55}
+  .mm-hint .sep{color:#585b70;font-weight:300}
+  .mm-hint .meta{color:#a6adc8;font-size:11px}
+  .mm-hint kbd{background:#313244;border:1px solid #585b70;padding:1px 6px;border-radius:3px;font-size:11px;font-family:"JetBrains Mono","Consolas",monospace;color:#cdd6f4}
+
+  @media (max-width: 1100px) {
+    main{grid-template-columns:1fr}
+    aside.legend{border-left:none;border-top:1px solid #313244}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎭 AutoVtuber · System Architecture</h1>
+  <div class="meta">自動化 V皮工坊 · 表單 → 5–10 分鐘 → VRM 1.0 · 中英對照 · <span id="diagram-count">6 圖</span></div>
+</header>
+
+<nav>
+  <button data-tab="overview" class="active">🌐 總圖 Overview</button>
+  <button data-tab="ui">🖥️ UI 子圖</button>
+  <button data-tab="pipeline">🤖 Pipeline 子圖</button>
+  <button data-tab="safety">🛡️ Safety 子圖</button>
+  <button data-tab="resources">📦 Resources 子圖</button>
+  <button data-tab="mindmap">🧠 Mind Map 思維導圖</button>
+</nav>
+
+<main>
+<div class="stage">
+
+<section class="panel active" data-panel="overview">
+  <div class="panel-header">
+    <strong>總圖 · System Overview</strong>
+    <div class="desc">使用者表單 → 6-stage pipeline (含 image-to-3D) → VRM 輸出。Safety layer 全程監控硬體。</div>
+  </div>
+  <div class="controls"><button onclick="zoom('overview',1.2)">＋</button><button onclick="zoom('overview',0.8)">－</button><button onclick="reset('overview')">⟲</button></div>
+  <div class="diagram-host">
+    <pre class="mermaid" id="d-overview">
+%%{init: {'flowchart': {'rankSpacing': 70, 'nodeSpacing': 30, 'curve': 'basis'}} }%%
+flowchart LR
+    USER([👤 User<br/>使用者表單]):::userCls
+
+    subgraph WK["⚙️ Workers · 工作執行緒"]
+        direction TB
+        JW[JobWorker]:::workerCls
+        MW[MonitorWorker]:::workerCls
+    end
+
+    subgraph PIPE["🤖 Pipeline · 生成管線"]
+        direction TB
+        S0[Stage 0<br/>PromptBuilder<br/>提示詞建構]:::pipeCls
+        S1[Stage 1<br/>Persona<br/>個性產生]:::pipeCls
+        S2[Stage 2<br/>FaceGen<br/>SDXL 臉部]:::pipeCls
+        S25[Stage 2.5<br/>Image-to-3D<br/>TripoSR 立體化]:::pipeCls
+        S3[Stage 3<br/>MeshFitter<br/>LAB 色調]:::pipeCls
+        S4[Stage 4<br/>VRMAssembler<br/>VRM 組裝]:::pipeCls
+        S0 --> S2
+        S0 --> S1
+        S2 --> S25
+        S25 --> S3
+        S3 --> S4
+    end
+
+    subgraph DATA["📦 Models · 模型資源"]
+        direction TB
+        OLLAMA[(Ollama<br/>gemma4:e2b)]:::dataCls
+        SDXL[(SDXL 6.5GB)]:::dataCls
+        TSR[(TripoSR 1.7GB)]:::dataCls
+        BASE[(VRoid base.vrm)]:::dataCls
+    end
+
+    subgraph OUT["📤 Output · 輸出"]
+        direction TB
+        PNG[character_*.png]:::outCls
+        MD[persona_*.md]:::outCls
+        VRM[character_*.vrm]:::outCls
+    end
+
+    subgraph UI["🖥️ UI · 桌面介面"]
+        direction TB
+        PREVIEW[QtQuick3D<br/>預覽]:::uiCls
+        EXPORT[Export<br/>匯出]:::uiCls
+        PREVIEW --> EXPORT
+    end
+
+    subgraph SAFETY["🛡️ Safety Layer · 安全層"]
+        direction LR
+        HG[HardwareGuard<br/>硬體守衛<br/>RAM 90/97 percent]:::safetyCls
+        ML[ModelLoader<br/>單一 GPU 模型]:::safetyCls
+        HEALTH[HealthLog<br/>JSONL]:::safetyCls
+    end
+
+    USER --> JW
+    JW --> S0
+    OLLAMA -.-> S0
+    OLLAMA -.-> S1
+    SDXL -.-> S2
+    TSR -.-> S25
+    BASE -.-> S4
+    S2 --> PNG
+    S1 --> MD
+    S4 --> VRM
+    VRM --> PREVIEW
+    HG -. abort .-> PIPE
+    ML --> PIPE
+    JW -.log.-> HEALTH
+    MW -.poll.-> HG
+
+    classDef userCls fill:#74c7ec,stroke:#1e66f5,color:#1e1e2e,stroke-width:2px
+    classDef uiCls fill:#cba6f7,stroke:#7287fd,color:#1e1e2e
+    classDef pipeCls fill:#f9e2af,stroke:#df8e1d,color:#1e1e2e
+    classDef safetyCls fill:#fab387,stroke:#fe640b,color:#1e1e2e
+    classDef dataCls fill:#a6e3a1,stroke:#40a02b,color:#1e1e2e
+    classDef outCls fill:#f5c2e7,stroke:#ea76cb,color:#1e1e2e
+    classDef workerCls fill:#94e2d5,stroke:#179299,color:#1e1e2e
+    </pre>
+  </div>
+</section>
+
+<section class="panel" data-panel="ui">
+  <div class="panel-header">
+    <strong>🖥️ UI 子圖 · Desktop Interface</strong>
+    <div class="desc">PySide6 + QtQuick3D · 表單 → JobWorker 呼叫 → 即時預覽 → 匯出</div>
+  </div>
+  <div class="controls"><button onclick="zoom('ui',1.2)">＋</button><button onclick="zoom('ui',0.8)">－</button><button onclick="reset('ui')">⟲</button></div>
+  <div class="diagram-host">
+    <pre class="mermaid" id="d-ui">
+flowchart TB
+    USER[👤 使用者 User]
+
+    subgraph FORM["📝 FormWidget · 表單組件"]
+        F1[髮色 Hair Color<br/>下拉選單]
+        F2[髮型 Hair Style<br/>下拉選單]
+        F3[眼色 Eye Color<br/>調色盤]
+        F4[個性 Personality<br/>16 軸 MBTI 簡化]
+        F5[風格 Style<br/>動漫風格 LoRA tag]
+        F6[暱稱 Name<br/>文字輸入]
+        SUBMIT[🚀 Submit 提交]
+    end
+
+    subgraph PREV["🎬 QtQuick3D Preview · 3D 預覽器"]
+        CAM[Camera Control<br/>滑鼠軌道控制]
+        LIGHT[Lighting Toggle<br/>光源切換]
+        WIRE[Wireframe Mode<br/>線框模式]
+        BLEND[BlendShape Slider<br/>表情滑桿]
+    end
+
+    subgraph CTRL["🎛️ 微調面板 Tune Panel"]
+        T1[頭髮顏色 Hair Tint]
+        T2[眼睛大小 Eye Scale]
+        T3[膚色 Skin Tone]
+        REGEN[🔄 Regenerate 重新生成]
+    end
+
+    subgraph EXP["📤 Export 匯出區"]
+        BTN_VSF[Copy → VSeeFace folder<br/>複製到 VSeeFace 模型資料夾]
+        BTN_VTS[Copy → VTube Studio<br/>複製到 VTube Studio]
+        BTN_OPEN[Open output/ folder<br/>開啟輸出資料夾]
+    end
+
+    JW[(JobWorker QThread<br/>背景生成工人)]
+
+    USER --> F1
+    USER --> F2
+    USER --> F3
+    USER --> F4
+    USER --> F5
+    USER --> F6
+    F1 --> SUBMIT
+    F2 --> SUBMIT
+    F3 --> SUBMIT
+    F4 --> SUBMIT
+    F5 --> SUBMIT
+    F6 --> SUBMIT
+    SUBMIT -- "config dict" --> JW
+    JW -- "vrm path" --> PREV
+    PREV --> CTRL
+    CTRL --> REGEN
+    REGEN --> JW
+    PREV --> EXP
+
+    classDef userCls fill:#74c7ec,stroke:#1e66f5,color:#1e1e2e
+    classDef formCls fill:#cba6f7,stroke:#7287fd,color:#1e1e2e
+    classDef previewCls fill:#94e2d5,stroke:#179299,color:#1e1e2e
+    classDef ctrlCls fill:#f9e2af,stroke:#df8e1d,color:#1e1e2e
+    classDef expCls fill:#f5c2e7,stroke:#ea76cb,color:#1e1e2e
+    classDef coreCls fill:#fab387,stroke:#fe640b,color:#1e1e2e
+    class USER userCls
+    class F1,F2,F3,F4,F5,F6,SUBMIT formCls
+    class CAM,LIGHT,WIRE,BLEND previewCls
+    class T1,T2,T3,REGEN ctrlCls
+    class BTN_VSF,BTN_VTS,BTN_OPEN expCls
+    class JW coreCls
+    </pre>
+  </div>
+</section>
+
+<section class="panel" data-panel="pipeline">
+  <div class="panel-header">
+    <strong>🤖 Pipeline 子圖 · 6 Stages 詳細</strong>
+    <div class="desc">每階段：input → tech stack → output。共享 Ollama warmed_session。</div>
+  </div>
+  <div class="controls"><button onclick="zoom('pipeline',1.2)">＋</button><button onclick="zoom('pipeline',0.8)">－</button><button onclick="reset('pipeline')">⟲</button></div>
+  <div class="diagram-host">
+    <pre class="mermaid" id="d-pipeline">
+flowchart TB
+    IN[/Form data 表單資料/]
+
+    subgraph S0["Stage 0 · PromptBuilder · 提示詞建構"]
+        S0_IN[Input · form dict]
+        S0_LLM[Ollama gemma4:e2b<br/>warmed_session 共享]
+        S0_TPL[Templated fallback<br/>樣板備援]
+        S0_OUT[Output · SDXL prompt 字串]
+        S0_IN --> S0_LLM
+        S0_LLM -.failure.-> S0_TPL
+        S0_LLM --> S0_OUT
+        S0_TPL --> S0_OUT
+    end
+
+    subgraph S1["Stage 1 · Persona Generator · 個性產生"]
+        S1_IN[Input · personality axis<br/>個性軸]
+        S1_LLM[gemma4:e2b<br/>共享 session]
+        S1_FB[qwen2.5:3b fallback<br/>長中文 fallback]
+        S1_OUT[Output · 七章節 .md<br/>persona_*.md]
+        S1_IN --> S1_LLM
+        S1_LLM -.failure.-> S1_FB
+        S1_LLM --> S1_OUT
+        S1_FB --> S1_OUT
+    end
+
+    subgraph S2["Stage 2 · FaceGenerator · 臉部生成"]
+        S2_IN[Input · SDXL prompt]
+        S2_M1[SDXL 1.0]
+        S2_M2[AnimagineXL 4.0 LoRA]
+        S2_M3[IP-Adapter Plus Face]
+        S2_PARAM[1024×1024 · 20 steps<br/>純 GPU mode]
+        S2_OUT[Output · 2D anime portrait<br/>character_*.png]
+        S2_IN --> S2_M1
+        S2_M1 --> S2_M2
+        S2_M2 --> S2_M3
+        S2_M3 --> S2_PARAM
+        S2_PARAM --> S2_OUT
+    end
+
+    subgraph S25["Stage 2.5 · Image-to-3D · 立體化"]
+        S25_IN[Input · 2D portrait]
+        S25_BG[rembg alpha matting<br/>u2net.onnx · 必選]
+        S25_TSR[TripoSR<br/>HF cache 1.7GB]
+        S25_MC[PyMCubes shim<br/>替代 torchmcubes]
+        S25_REC[post-load recovery<br/>RAM spike 復原]
+        S25_OUT[Output · 3D mesh<br/>10710 verts trimesh]
+        S25_IN --> S25_BG
+        S25_BG --> S25_TSR
+        S25_TSR --> S25_MC
+        S25_TSR -.spike.-> S25_REC
+        S25_MC --> S25_OUT
+    end
+
+    subgraph S3["Stage 3 · MeshFitter · 色調貼合"]
+        S3_IN[Input · TSR mesh + VRoid base]
+        S3_SAMPLE[Forehead 64×64 sampling<br/>排除 cheek blush]
+        S3_LAB[LAB chroma shift<br/>不用 HSL 避免綠 cast]
+        S3_BAKE[UV-aware reverse bake<br/>Tint mode 保留五官]
+        S3_OUT[Output · tinted base mesh]
+        S3_IN --> S3_SAMPLE
+        S3_SAMPLE --> S3_LAB
+        S3_LAB --> S3_BAKE
+        S3_BAKE --> S3_OUT
+    end
+
+    subgraph S4["Stage 4 · VRMAssembler · VRM 組裝"]
+        S4_IN[Input · tinted mesh + persona]
+        S4_LOAD[trimesh + pygltflib<br/>讀取 base.vrm]
+        S4_TEX[Modify textures<br/>換臉/染色]
+        S4_BS[BlendShape × Personality<br/>個性映射]
+        S4_OUT[Output · character_*.vrm]
+        S4_IN --> S4_LOAD
+        S4_LOAD --> S4_TEX
+        S4_TEX --> S4_BS
+        S4_BS --> S4_OUT
+    end
+
+    IN --> S0
+    S0_OUT --> S2
+    S0_OUT --> S1
+    S2_OUT --> S25
+    S25_OUT --> S3
+    S3_OUT --> S4
+    S1_OUT -.persona.-> S4
+
+    classDef inCls fill:#74c7ec,stroke:#1e66f5,color:#1e1e2e
+    classDef stageCls fill:#f9e2af,stroke:#df8e1d,color:#1e1e2e
+    class IN inCls
+    </pre>
+  </div>
+</section>
+
+<section class="panel" data-panel="safety">
+  <div class="panel-header">
+    <strong>🛡️ Safety Layer 子圖 · 安全層</strong>
+    <div class="desc">硬體守衛 1 秒輪詢 → threading.Event 通知所有 stage abort。RAM spike 期間用 ModelLoader 序列化避免 OOM。</div>
+  </div>
+  <div class="controls"><button onclick="zoom('safety',1.2)">＋</button><button onclick="zoom('safety',0.8)">－</button><button onclick="reset('safety')">⟲</button></div>
+  <div class="diagram-host">
+    <pre class="mermaid" id="d-safety">
+flowchart TB
+    subgraph HG["🛡️ HardwareGuard · 硬體守衛"]
+        HG_POLL[1 秒輪詢<br/>1s polling interval]
+        HG_RAM[RAM 監控<br/>warn 90% / abort 97%]
+        HG_GPU[GPU 監控<br/>VRAM + 溫度]
+        HG_DISK[磁碟監控<br/>output dir 剩餘空間]
+        HG_HYS[Hysteresis 3s<br/>避免 flicker]
+        HG_EVT[(threading.Event<br/>abort signal)]
+        HG_POLL --> HG_RAM
+        HG_POLL --> HG_GPU
+        HG_POLL --> HG_DISK
+        HG_RAM --> HG_HYS
+        HG_GPU --> HG_HYS
+        HG_DISK --> HG_HYS
+        HG_HYS -- "trigger" --> HG_EVT
+    end
+
+    subgraph ML["⚖️ ModelLoader · 模型調度器"]
+        ML_RULE[單一重模型於 GPU<br/>Single heavy model rule]
+        ML_SEQ[Sequence:<br/>SDXL → unload<br/>TripoSR → unload]
+        ML_PURE[Pure GPU mode .to cuda<br/>不用 sequential_cpu_offload]
+        ML_RULE --> ML_SEQ
+        ML_SEQ --> ML_PURE
+    end
+
+    subgraph LOG["📝 HealthLog · 健康紀錄"]
+        LOG_FMT[Format: JSONL append<br/>每行一筆事件]
+        LOG_REC[Records:<br/>stage start/end<br/>RAM/GPU snapshot<br/>error stack]
+        LOG_USE[Postmortem<br/>abort 後分析]
+        LOG_FMT --> LOG_REC
+        LOG_REC --> LOG_USE
+    end
+
+    subgraph TARGETS["🎯 受控對象 · Controlled Stages"]
+        T2[Stage 2 FaceGen]
+        T25[Stage 2.5 Image-to-3D]
+        T3[Stage 3 MeshFitter]
+        T_PROMPT[PromptBuilder]
+    end
+
+    HG_EVT -. abort .-> T2
+    HG_EVT -. abort .-> T25
+    HG_EVT -. abort .-> T3
+    HG_EVT -. abort .-> T_PROMPT
+    ML_PURE --> T2
+    ML_PURE --> T25
+    T2 -.event.-> LOG_FMT
+    T25 -.event.-> LOG_FMT
+    T3 -.event.-> LOG_FMT
+    HG_EVT -.event.-> LOG_FMT
+
+    classDef guardCls fill:#fab387,stroke:#fe640b,color:#1e1e2e
+    classDef loaderCls fill:#f9e2af,stroke:#df8e1d,color:#1e1e2e
+    classDef logCls fill:#a6e3a1,stroke:#40a02b,color:#1e1e2e
+    classDef targetCls fill:#cba6f7,stroke:#7287fd,color:#1e1e2e
+    class HG_POLL,HG_RAM,HG_GPU,HG_DISK,HG_HYS,HG_EVT guardCls
+    class ML_RULE,ML_SEQ,ML_PURE loaderCls
+    class LOG_FMT,LOG_REC,LOG_USE logCls
+    class T2,T25,T3,T_PROMPT targetCls
+    </pre>
+  </div>
+</section>
+
+<section class="panel" data-panel="resources">
+  <div class="panel-header">
+    <strong>📦 Resources 子圖 · 模型 / 資源</strong>
+    <div class="desc">所有外部模型清單 · 路徑 · 大小 · 用途。已標記 fallback 與 deprecated。</div>
+  </div>
+  <div class="controls"><button onclick="zoom('resources',1.2)">＋</button><button onclick="zoom('resources',0.8)">－</button><button onclick="reset('resources')">⟲</button></div>
+  <div class="diagram-host">
+    <pre class="mermaid" id="d-resources">
+flowchart LR
+    subgraph IMG["🎨 影像生成 Image Gen"]
+        SDXL[SDXL 1.0<br/>animagine-xl-4.0<br/>📁 models/sdxl/<br/>💾 6.5 GB]
+        IPA[IP-Adapter Plus Face<br/>📁 models/ip_adapter/<br/>💾 3.3 GB<br/>⚠️ image_encoder 損壞 fallback OK]
+        SDXL --> IPA
+    end
+
+    subgraph THREE_D["🧊 3D 生成 3D Gen"]
+        TSR[TripoSR<br/>📁 ~/.cache/huggingface/<br/>💾 1.7 GB<br/>⚡ 第一次自動下載]
+        REMBG[rembg u2net<br/>📁 ~/.u2net/u2net.onnx<br/>💾 176 MB<br/>🔑 alpha matting 必選]
+        PYMC[PyMCubes shim<br/>📁 venv/site-packages/<br/>替代 torchmcubes]
+    end
+
+    subgraph LLM["🧠 LLM · Ollama 服務"]
+        OL_E2B[gemma4:e2b<br/>💾 7.2 GB · 預設 default]
+        OL_Q3B[qwen2.5:3b<br/>💾 1.9 GB · 中文 fallback]
+        OL_E4B[gemma4:e4b<br/>💾 9.6 GB · ⛔ 不用]
+    end
+
+    subgraph VRM_BASE["🎭 VRM 模板 Base Models"]
+        BASE_A[(AvatarSample_A.vrm)]
+        BASE_B[(AvatarSample_B.vrm)]
+        BASE_C[(AvatarSample_C.vrm)]
+        UV_TPL[face_uv_template_*.json<br/>UV 對應表]
+        UV_MASK[face_uv_mask_*.png<br/>UV 遮罩]
+    end
+
+    subgraph RUNTIME["⚙️ 執行環境 Runtime"]
+        VENV[Python 3.12.8 venv<br/>📁 C:\avt\venv\]
+        JCT[ASCII junction<br/>C:\avt → G:\...\AutoVtuber<br/>解中文路徑]
+    end
+
+    subgraph DEP["⚠️ Deprecated · 不再投入"]
+        D1[face_baker.py<br/>2D 對齊 fallback]
+        D2[face_aligner.py<br/>BlazeFace fallback]
+    end
+
+    classDef imgCls fill:#cba6f7,stroke:#7287fd,color:#1e1e2e
+    classDef threedCls fill:#94e2d5,stroke:#179299,color:#1e1e2e
+    classDef llmCls fill:#f9e2af,stroke:#df8e1d,color:#1e1e2e
+    classDef vrmCls fill:#a6e3a1,stroke:#40a02b,color:#1e1e2e
+    classDef runtimeCls fill:#fab387,stroke:#fe640b,color:#1e1e2e
+    classDef depCls fill:#6c7086,stroke:#45475a,color:#cdd6f4
+    class SDXL,IPA imgCls
+    class TSR,REMBG,PYMC threedCls
+    class OL_E2B,OL_Q3B,OL_E4B llmCls
+    class BASE_A,BASE_B,BASE_C,UV_TPL,UV_MASK vrmCls
+    class VENV,JCT runtimeCls
+    class D1,D2 depCls
+    </pre>
+  </div>
+</section>
+
+<section class="panel" data-panel="mindmap">
+  <div class="panel-header">
+    <strong>🧠 Mind Map · 思維導圖（總圖）</strong>
+    <div class="desc">放射狀覽 · 中文主節點 · 所有領域一次看。要看子圖細節請切上面的分頁。</div>
+  </div>
+  <div class="controls"><button onclick="zoom('mindmap',1.2)">＋</button><button onclick="zoom('mindmap',0.8)">－</button><button onclick="reset('mindmap')">⟲</button></div>
+  <div class="mm-hint">
+    <div class="row">
+      <span class="meta">click →</span>
+      <span class="tag focus">focus</span>
+      <span class="sep">+</span>
+      <span class="tag anc">祖先 ancestors</span>
+      <span class="sep">+</span>
+      <span class="tag desc">子孫 descendants</span>
+      <span class="sep">·</span>
+      <span class="tag dim">others 18%</span>
+      <span class="meta">edges 12%</span>
+    </div>
+    <div class="row meta">
+      <span>↑ 上方 tab 同步脈動：點到節點所屬子圖</span>
+    </div>
+    <div class="row meta">
+      <span>reset · <kbd>Esc</kbd> / 點空白</span>
+      <span class="sep">·</span>
+      <span>pan · 拖曳 drag</span>
+      <span class="sep">·</span>
+      <span>zoom · 滾輪 wheel</span>
+    </div>
+  </div>
+  <div class="diagram-host">
+    <pre class="mermaid" id="d-mindmap">
+mindmap
+  root((🎭 AutoVtuber<br/>自動化 V皮工坊))
+    🖥️ UI · 桌面介面
+      FormWidget 表單
+        髮色 / 髮型 / 眼色
+        個性軸 16 軸 MBTI
+        風格 / 暱稱
+      QtQuick3D Preview 預覽
+      Tune Panel 微調面板
+      Export 匯出
+    🤖 Pipeline · 6 階段管線
+      Stage 0 PromptBuilder
+        Ollama gemma4 e2b
+        warmed session 共享
+        templated fallback
+      Stage 1 Persona 個性
+        七章節中文 markdown
+        qwen2.5 3b fallback
+      Stage 2 FaceGen 臉部生成
+        SDXL 1.0
+        AnimagineXL 4.0 LoRA
+        IP-Adapter Plus Face
+        1024 純 GPU 20 steps
+      Stage 2.5 Image-to-3D
+        TripoSR HF cache
+        rembg alpha matting
+        PyMCubes shim
+        post-load recovery
+      Stage 3 MeshFitter 貼合
+        Tint mode 保留五官
+        LAB chroma shift
+        Forehead 64x64
+        UV-aware reverse bake
+      Stage 4 VRMAssembler
+        VRoid base topology
+        trimesh pygltflib
+        BlendShape 個性映射
+    🛡️ Safety Layer 安全層
+      HardwareGuard 硬體守衛
+        RAM 90 / 97 percent
+        threading Event abort
+        hysteresis 3s
+      ModelLoader 單一重模型
+      HealthLog JSONL 紀錄
+    📦 Models 模型資源
+      SDXL 6.5 GB
+      TripoSR 1.7 GB
+      Ollama gemma4 e2b 7.2 GB
+      VRoid AvatarSample A B C
+      rembg u2net 176 MB
+    🪟 Windows 修復
+      ASCII junction C:\avt
+      解 MediaPipe cv2 中文路徑
+    📤 Output 輸出
+      character vrm
+      persona md
+      character png
+    🎯 Status 狀態
+      MVP1 完成 391 s
+      MVP2 完成 488 s
+      MVP3 + MVP4 alpha 完成
+      pytest 139 / 14 commits
+      下一步 VSeeFace E04 驗收
+    </pre>
+  </div>
+</section>
+
+</div>
+
+<aside class="legend">
+  <section>
+    <h3>🎨 顏色 Color</h3>
+    <div class="row"><div class="swatch" style="background:#74c7ec"></div><div class="label">使用者輸入<small>User input</small></div></div>
+    <div class="row"><div class="swatch" style="background:#cba6f7"></div><div class="label">UI 元件<small>UI components</small></div></div>
+    <div class="row"><div class="swatch" style="background:#f9e2af"></div><div class="label">Pipeline 階段<small>Pipeline stages</small></div></div>
+    <div class="row"><div class="swatch" style="background:#fab387"></div><div class="label">安全層 / Guard<small>Safety / Guard</small></div></div>
+    <div class="row"><div class="swatch" style="background:#a6e3a1"></div><div class="label">模型 / 資源<small>Models / Resources</small></div></div>
+    <div class="row"><div class="swatch" style="background:#f5c2e7"></div><div class="label">輸出檔<small>Output artifacts</small></div></div>
+    <div class="row"><div class="swatch" style="background:#94e2d5"></div><div class="label">執行緒 / Worker<small>Threads / Workers</small></div></div>
+    <div class="row"><div class="swatch" style="background:#6c7086"></div><div class="label">已棄用<small>Deprecated</small></div></div>
+  </section>
+
+  <section>
+    <h3>📐 形狀 Shape</h3>
+    <div class="row"><div class="shape rect"></div><div class="label">通用節點<small>Generic component</small></div></div>
+    <div class="row"><div class="shape stadium"></div><div class="label">入口 / 起點<small>Entry · ([ ])</small></div></div>
+    <div class="row"><div class="shape cyl"></div><div class="label">資料儲存 / 模型檔<small>Data store · [( )]</small></div></div>
+    <div class="row"><div class="shape rect" style="transform:skewX(-12deg)"></div><div class="label">處理 / 轉換<small>Process · [/ /]</small></div></div>
+  </section>
+
+  <section>
+    <h3>🔗 線條 Line</h3>
+    <div class="row">
+      <div class="line-sample"><svg viewBox="0 0 36 14"><line x1="0" y1="7" x2="30" y2="7" stroke="#a6adc8" stroke-width="1.5"/><polygon points="30,3 36,7 30,11" fill="#a6adc8"/></svg></div>
+      <div class="label">直接資料流<small>Direct data flow · --&gt;</small></div>
+    </div>
+    <div class="row">
+      <div class="line-sample"><svg viewBox="0 0 36 14"><line x1="0" y1="7" x2="30" y2="7" stroke="#a6adc8" stroke-width="1.5" stroke-dasharray="3,2"/><polygon points="30,3 36,7 30,11" fill="#a6adc8"/></svg></div>
+      <div class="label">事件 / 訊號<small>Event / signal · -.-&gt;</small></div>
+    </div>
+    <div class="row">
+      <div class="line-sample"><svg viewBox="0 0 36 14"><line x1="0" y1="7" x2="30" y2="7" stroke="#fab387" stroke-width="2.5" stroke-dasharray="4,2"/><polygon points="30,2 36,7 30,12" fill="#fab387"/></svg></div>
+      <div class="label">中斷 / abort<small>Hardware abort signal</small></div>
+    </div>
+  </section>
+
+  <section>
+    <h3>🧠 Mind Map 互動色</h3>
+    <div class="row"><div class="swatch" style="background:#f9e2af"></div><div class="label">點擊聚焦<small>focus node</small></div></div>
+    <div class="row"><div class="swatch" style="background:#f38ba8"></div><div class="label">祖先（→ root）<small>ancestors</small></div></div>
+    <div class="row"><div class="swatch" style="background:#89b4fa"></div><div class="label">子孫（subtree）<small>descendants</small></div></div>
+    <div class="row"><div class="swatch" style="background:#6c7086;opacity:.55"></div><div class="label">其餘 dim 18%<small>edges 12%</small></div></div>
+    <div class="row" style="font-size:11px;color:#7f849c;margin-top:6px">⚠️ 此區色票僅用於 mind map 互動，與 architecture color palette 不重疊</div>
+  </section>
+
+  <section>
+    <h3>⌨️ 操作 Controls</h3>
+    <div class="row"><div class="label">滾輪縮放<small>Mouse wheel · zoom</small></div></div>
+    <div class="row"><div class="label">拖曳平移<small>Click + drag · pan</small></div></div>
+    <div class="row"><div class="label">右上 ＋ ／ －／ ⟲<small>Buttons</small></div></div>
+  </section>
+</aside>
+
+</main>
+
+<footer>
+  Source · <code>G:\claude專案資料夾\AutoVtuber\docs\diagrams\</code> · 渲染由 mermaid.js v11 (CDN) 完成 · 滾輪縮放 / 滑鼠拖曳平移
+</footer>
+
+<script>
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#1e1e2e',
+    primaryTextColor: '#cdd6f4',
+    primaryBorderColor: '#89b4fa',
+    lineColor: '#a6adc8',
+    secondaryColor: '#313244',
+    tertiaryColor: '#181825',
+    background: '#11111b',
+    mainBkg: '#313244',
+    nodeTextColor: '#cdd6f4',
+    fontFamily: 'Segoe UI, Microsoft JhengHei, sans-serif',
+    fontSize: '14px'
+  },
+  flowchart: { htmlLabels: true, curve: 'basis', padding: 12 },
+  mindmap: { padding: 18 }
+});
+
+const panZoomInstances = {};
+const renderedTabs = new Set();
+const sources = {};
+
+// snapshot all sources before any rendering touches them
+document.querySelectorAll('pre.mermaid').forEach(el => {
+  const tab = el.id.replace('d-','');
+  sources[tab] = el.textContent;
+});
+
+async function renderTab(tab) {
+  if (renderedTabs.has(tab)) return;
+  const host = document.querySelector(`section.panel[data-panel="${tab}"] .diagram-host`);
+  if (!host) return;
+  const src = sources[tab];
+  if (!src) {
+    host.innerHTML = `<div style="padding:30px;color:#f38ba8">No source for ${tab}</div>`;
+    return;
+  }
+  host.innerHTML = '<div style="padding:30px;color:#a6adc8">Rendering…</div>';
+  try {
+    const tmpId = 'mmd-' + tab + '-' + Date.now();
+    const { svg } = await mermaid.render(tmpId, src);
+    host.innerHTML = svg;
+    const svgEl = host.querySelector('svg');
+    if (svgEl) {
+      svgEl.setAttribute('width', '100%');
+      svgEl.setAttribute('height', '100%');
+      svgEl.style.maxWidth = 'none';
+      svgEl.style.maxHeight = 'none';
+      if (tab === 'mindmap') {
+        wireMindmapInteractivity(svgEl, src);
+      }
+      try {
+        panZoomInstances[tab] = svgPanZoom(svgEl, {
+          zoomEnabled: true, panEnabled: true, controlIconsEnabled: false,
+          fit: true, center: true, minZoom: 0.2, maxZoom: 8
+        });
+      } catch(e) { console.warn('panZoom init failed for', tab, e); }
+    }
+    renderedTabs.add(tab);
+  } catch (e) {
+    console.error('Mermaid render error for', tab, e);
+    const msg = (e && (e.message || e.toString())) || 'unknown error';
+    host.innerHTML = `<div style="padding:30px;color:#f38ba8;font-family:monospace;white-space:pre-wrap">⚠️ Render failed for tab "${tab}":\n\n${msg}\n\n— check the .mmd source for syntax issues.</div>`;
+  }
+}
+
+// ----- Mindmap interactivity -----
+
+function normalizeLabel(s) {
+  return (s || '').replace(/[ -⁯⸀-⹿\\'!"#$%&()*+,\-.\/:;<=>?@\[\]^_`{|}~]/g,'')
+    .replace(/\s+/g,' ').trim().toLowerCase();
+}
+
+function buildMindmapTree(src) {
+  const lines = src.split(/\r?\n/);
+  const nodes = []; const stack = []; let id = 0;
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith('mindmap') || trimmed.startsWith('%%') || trimmed.startsWith('---')) continue;
+    const indent = raw.length - raw.trimStart().length;
+    let label = trimmed
+      .replace(/^\(\((.*)\)\)$/, '$1')
+      .replace(/^\)(.*)\($/, '$1')
+      .replace(/^\((.*)\)$/, '$1')
+      .replace(/^\[(.*)\]$/, '$1')
+      .replace(/^\{\{(.*)\}\}$/, '$1')
+      .replace(/<br\s*\/?>/gi, ' ')
+      .trim();
+    const node = { id: id++, label, key: normalizeLabel(label), depth: indent, children: [], parent: null };
+    while (stack.length && stack[stack.length-1].depth >= indent) stack.pop();
+    if (stack.length) {
+      node.parent = stack[stack.length-1].id;
+      stack[stack.length-1].children.push(node.id);
+    }
+    nodes.push(node);
+    stack.push(node);
+  }
+  return nodes;
+}
+
+function pathToRoot(nodes, id) {
+  const path = []; let cur = id;
+  while (cur != null) { path.push(cur); cur = nodes[cur] ? nodes[cur].parent : null; }
+  return path;
+}
+
+function descendants(nodes, id) {
+  const out = []; const q = [id];
+  while (q.length) {
+    const cur = q.shift(); out.push(cur);
+    for (const c of nodes[cur].children) q.push(c);
+  }
+  return out;
+}
+
+function wireMindmapInteractivity(svgEl, src) {
+  const tree = buildMindmapTree(src);
+  const nodeEls = Array.from(svgEl.querySelectorAll('g.mindmap-node'));
+  const svgToTree = new Map();
+  nodeEls.forEach(el => {
+    const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    const key = normalizeLabel(txt);
+    let match = tree.find(n => n.key === key);
+    if (!match) {
+      // partial match: tree label fully contained in svg text or vice versa
+      match = tree.find(n => n.key && key.includes(n.key)) || tree.find(n => n.key && n.key.includes(key));
+    }
+    if (match) svgToTree.set(el, match.id);
+  });
+  const edgeEls = Array.from(svgEl.querySelectorAll('g.edges path, .edges path, path.edge'));
+
+  // Build emoji → tab mapping by matching mindmap top-level branches (= direct children of the root) to nav button labels
+  const tabButtons = Array.from(document.querySelectorAll('nav button'));
+  function firstEmoji(s) {
+    // Catch most pictographic chars + variation selectors. Falls back to first non-ASCII glyph if no Extended_Pictographic property.
+    if (!s) return null;
+    try {
+      const m = s.match(/\p{Extended_Pictographic}(️)?/u);
+      if (m) return m[0];
+    } catch (e) { /* old browser */ }
+    const m2 = s.match(/[^\x00-\x7f\s][️]?/);
+    return m2 ? m2[0] : null;
+  }
+  const rootId = tree.length > 0 ? tree[0].id : null;
+  const branchToTab = new Map(); // top-level branch node id -> tab name
+  tree.forEach(n => {
+    if (n.parent !== rootId) return;
+    const branchEmoji = firstEmoji(n.label);
+    if (!branchEmoji) return;
+    const matchBtn = tabButtons.find(btn => firstEmoji(btn.textContent) === branchEmoji && btn.dataset.tab !== 'mindmap');
+    if (matchBtn) branchToTab.set(n.id, matchBtn.dataset.tab);
+  });
+  function findBranchRoot(treeId) {
+    if (rootId == null) return null;
+    let cur = treeId;
+    while (cur != null) {
+      const n = tree[cur];
+      if (!n) return null;
+      if (n.id === rootId) return null;        // clicked root itself — no branch
+      if (n.parent === rootId) return n.id;    // direct child of root = top-level branch
+      cur = n.parent;
+    }
+    return null;
+  }
+  function clearTabHighlight() {
+    tabButtons.forEach(b => b.classList.remove('mm-related'));
+  }
+  // Diagnostic: log branchToTab once for inspection
+  try { console.log('[mindmap] branchToTab', Array.from(branchToTab.entries()).map(([k,v]) => [tree[k] && tree[k].label, v])); } catch(e){}
+
+  svgEl.classList.add('mm-interactive');
+
+  function reset() {
+    nodeEls.forEach(n => n.classList.remove('mm-dim','mm-anc','mm-desc','mm-focus'));
+    edgeEls.forEach(e => e.classList.remove('mm-dim','mm-anc','mm-desc'));
+    clearTabHighlight();
+  }
+
+  function highlight(treeId) {
+    // ancestors = path-to-root EXCLUDING the focus node itself; descendants = subtree EXCLUDING focus
+    const ancestorsArr = pathToRoot(tree, treeId).filter(id => id !== treeId);
+    const descArr = descendants(tree, treeId).filter(id => id !== treeId);
+    const ancestors = new Set(ancestorsArr);
+    const desc = new Set(descArr);
+
+    nodeEls.forEach(n => {
+      n.classList.remove('mm-dim','mm-anc','mm-desc','mm-focus');
+      const tid = svgToTree.get(n);
+      if (tid === treeId) n.classList.add('mm-focus');
+      else if (ancestors.has(tid)) n.classList.add('mm-anc');
+      else if (desc.has(tid)) n.classList.add('mm-desc');
+      else n.classList.add('mm-dim');
+    });
+
+    // Bbox of nodes by category, in SVG userspace
+    function bboxesOf(treeIds) {
+      const out = [];
+      svgToTree.forEach((tid, el) => {
+        if (treeIds.has(tid) && el.getBBox) {
+          try { out.push(el.getBBox()); } catch (e) {}
+        }
+      });
+      return out;
+    }
+    const focusSet = new Set([treeId]);
+    const focusBoxes = bboxesOf(focusSet);
+    const ancBoxes = bboxesOf(ancestors);
+    const descBoxes = bboxesOf(desc);
+    function inAny(p, boxes) {
+      return boxes.some(bb => p.x >= bb.x - 6 && p.x <= bb.x + bb.width + 6 && p.y >= bb.y - 6 && p.y <= bb.y + bb.height + 6);
+    }
+    function classify(p) {
+      if (inAny(p, focusBoxes)) return 'focus';
+      if (inAny(p, ancBoxes))   return 'anc';
+      if (inAny(p, descBoxes))  return 'desc';
+      return null;
+    }
+
+    edgeEls.forEach(e => {
+      e.classList.remove('mm-anc','mm-desc');
+      e.classList.add('mm-dim');
+      try {
+        const len = e.getTotalLength();
+        if (!len) return;
+        const a = classify(e.getPointAtLength(0));
+        const b = classify(e.getPointAtLength(len));
+        if (!a || !b) return;
+        // Edge is ancestor-side if both endpoints are in {focus, anc} and at least one is anc
+        // Edge is descendant-side if both are in {focus, desc} and at least one is desc
+        const isAncEdge = (a === 'anc' || a === 'focus') && (b === 'anc' || b === 'focus') && (a === 'anc' || b === 'anc');
+        const isDescEdge = (a === 'desc' || a === 'focus') && (b === 'desc' || b === 'focus') && (a === 'desc' || b === 'desc');
+        if (isAncEdge) {
+          e.classList.remove('mm-dim');
+          e.classList.add('mm-anc');
+        } else if (isDescEdge) {
+          e.classList.remove('mm-dim');
+          e.classList.add('mm-desc');
+        }
+      } catch (err) { /* ignore */ }
+    });
+
+    // Highlight the owning sub-diagram tab in the top nav
+    clearTabHighlight();
+    const branchRoot = findBranchRoot(treeId);
+    if (branchRoot != null) {
+      const tabName = branchToTab.get(branchRoot);
+      if (tabName) {
+        const btn = tabButtons.find(b => b.dataset.tab === tabName);
+        if (btn) btn.classList.add('mm-related');
+      }
+    }
+  }
+
+  svgEl.addEventListener('click', (ev) => {
+    const target = ev.target.closest('g.mindmap-node');
+    if (!target || !svgToTree.has(target)) {
+      reset();
+      return;
+    }
+    ev.stopPropagation();
+    highlight(svgToTree.get(target));
+  });
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') reset();
+  });
+}
+
+function activate(tab) {
+  document.querySelectorAll('nav button').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+    // navigating away from mind map (or clicking the pulsing tab) ends the highlight
+    b.classList.remove('mm-related');
+  });
+  document.querySelectorAll('section.panel').forEach(s => s.classList.toggle('active', s.dataset.panel === tab));
+  // render lazily (panel must be visible for fit/center to work)
+  setTimeout(() => {
+    renderTab(tab).then(() => {
+      const inst = panZoomInstances[tab];
+      if (inst) { try { inst.resize(); inst.fit(); inst.center(); } catch(e){} }
+    });
+  }, 30);
+}
+
+function zoom(tab, factor) { const i = panZoomInstances[tab]; if (i) i.zoomBy(factor); }
+function reset(tab) { const i = panZoomInstances[tab]; if (i) { i.resetZoom(); i.fit(); i.center(); } }
+
+document.querySelectorAll('nav button').forEach(b => b.addEventListener('click', () => activate(b.dataset.tab)));
+document.addEventListener('DOMContentLoaded', () => {
+  // strip the embedded <pre> so they don't show as raw text
+  document.querySelectorAll('pre.mermaid').forEach(el => el.style.display = 'none');
+  renderTab('overview');
+});
+</script>
+</body>
+</html>

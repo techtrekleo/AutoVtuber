@@ -3,6 +3,8 @@
 > Windows 桌面應用，從一張表單一鍵生成可動的 VRM VTuber 模型。
 > **使用者只需輸入「髮色/髮型/眼色/個性/風格」→ 系統 5–10 分鐘輸出標準 .vrm 檔，可直接載入 VSeeFace / VTube Studio。**
 
+> **📐 視覺架構文件（預設圖）：** [`docs/diagrams/2026-05-09_AutoVtuber_預設圖/architecture.html`](docs/diagrams/2026-05-09_AutoVtuber_預設圖/architecture.html) · 互動 viewer 含總圖 / UI / Pipeline / Safety / Resources / Mind Map 共 6 分頁
+
 ---
 
 ## 📌 基本資訊
@@ -394,6 +396,57 @@ G:\claude專案資料夾\AutoVtuber\
 
 ---
 
+## 📚 外部專案借鑑清單
+
+> 不直接整合，但有設計價值的相關 open-source 專案。
+
+### Open-LLM-VTuber（MIT，Live2D-only）
+**Repo：** https://github.com/Open-LLM-VTuber/Open-LLM-VTuber
+**性質：** 互補產品 — 我們負責「製作 VRM」，他們負責「Runtime 對話（ASR + LLM + TTS + Live2D 渲染）」
+**支援格式：** Live2D only，**不支援 VRM**
+
+#### 與 AutoVtuber 的關係
+
+| 範疇 | AutoVtuber（我們）| Open-LLM-VTuber |
+|---|---|---|
+| 製作角色 | ✅ 核心 | ❌ 沒做 |
+| 即時對話 | ❌ 沒做 | ✅ 核心 |
+| 角色格式 | VRM 0.x | Live2D |
+| LLM 用途 | 一次性生 persona + SDXL prompt | 持續對話互動 |
+| LLM backends | 1（Ollama）| 11（Ollama/OpenAI/Gemini/Claude/Mistral/DeepSeek/Zhipu/GGUF/LM Studio/vLLM/Bedrock）|
+| TTS | 無 | 10 個（Edge/Coqui/MeloTTS/Bark/Fish/...）|
+
+#### ❌ 直接整合不適用
+- 他們只支援 Live2D；要支援 VRM 需 fork + 自寫 three-vrm.js renderer
+- 我們沒做 ASR/TTS/即時對話，接過去也接不上
+
+#### 🟢 三大高價值借鑑點
+
+1. **Persona 雙用設計**（最有價值）
+   - 我們目前 `persona_generator.py` 輸出七章節 markdown 給「使用者讀」
+   - Open-LLM-VTuber 證明：persona 可直接餵給 LLM 當 system prompt 做角色扮演
+   - **建議行動**：persona generator 加 `to_llm_system_prompt()` method，把角色設定濃縮成 ≤500 字的 system prompt。MVP5 用得到。
+
+2. **多 LLM Backend 抽象介面**
+   - 他們 11 個 LLM provider 用同一介面（讀 chat history → return reply text）
+   - 我們的 `prompt_builder` 目前只走 Ollama HTTP，未來想加 OpenAI/Claude 可參考他們抽象設計
+
+3. **Emotion Mapping Schema**
+   - 他們有「LLM 回應文字 → emotion tag → Live2D 表情參數」的 mapping
+   - VRM 也有 blendshape `Joy / Angry / Sorrow / Fun` — 我們 persona 可順手生「情緒觸發字典」（哪些關鍵字 trigger 哪個 blendshape）
+
+#### 對 Roadmap 的具體建議
+
+| Phase | 借鑑做什麼 | 估時 |
+|---|---|---|
+| **MVP5** | persona 加 `to_llm_system_prompt()` + emotion trigger dict | ~2 hr |
+| **MVP6** | LLM provider 抽象層（介面 + Ollama/OpenAI 兩 backend）| ~6 hr |
+| **MVP7（願景）** | 自建 VRM runtime（fork + three-vrm.js + VRM blendshape mapping）| ~3-5 天 |
+
+**最終生態願景**：AutoVtuber 出的 VRM + 自建 runtime → 使用者下載 V皮直接能對話互動，成為完整「製作 + 運行」雙生態。
+
+---
+
 ## 🔌 外部系統整合規格（2026-04-26 完整文件研究後）
 
 > 依 memory rule「整合外部系統前必須完整讀完官方文件」整理。先讀後做避免再走死路。
@@ -536,6 +589,11 @@ for uv_pixel in face_skin_texture:
 | 2026-04-26 | **MVP 重切**：MVP1 重新定義 90%（缺 persona）/ MVP2 = 3D 工程 / face_baker 標 fallback |
 | 2026-04-26 | 研究 image-to-3D 候選：**TripoSR (~2GB)** 預設、CharacterGen / InstantMesh / Hunyuan3D 備案；TripoSR 出 OBJ+GLB MIT-style 商用 OK |
 | 2026-04-26 | **Session 結束壓縮 — 下次從 persona_generator + TripoSR 整合接續** |
+| 2026-06-04 | **Reality Checker agent 三輪審計** — 取代人類驗收：v1 5.3/10 FAIL → v2 6.8/10 CONDITIONAL → v3 **8.0/10 PASS**（5 rubrics 全 ≥ 7.5）|
+| 2026-06-04 | v2 修復：iris 重複前置 + priority-neg + BlazeFace ROI hue assertion + 自動 retry → VRM Coherence 3→8（+5）|
+| 2026-06-04 | v3 修復：`_STYLE_BACKGROUND` 全面改寫（CYBERPUNK 不再用「賽博城市夜行者」）+ `_STYLE_SIGNATURE_PROP` + regex trope validator + `## 簽名 Prop` 章節 → Originality 5.5→8.2（+2.7）|
+| 2026-06-04 | **MVP5 完成** — `persona_runtime.py`：`to_llm_system_prompt()` ≤500 字 + `extract_emotion_triggers()` 中文觸發詞→VRM blendshape preset 字典 + orchestrator 自動存 `<basename>_persona_runtime.json`（10 個 tests + 32 個整合測試全綠）|
+| 2026-06-04 | 借鑑 Open-LLM-VTuber 設計（persona 雙用：閱讀 + 餵下游 chat LLM），為 MVP6 LLM provider 抽象 + MVP7 自建 VRM runtime 留接口 |
 
 ---
 
