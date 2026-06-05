@@ -400,6 +400,65 @@ G:\claude專案資料夾\AutoVtuber\
 
 > 不直接整合，但有設計價值的相關 open-source 專案。
 
+### VoxCPM（Apache 2.0，多語 TTS）⭐ **MVP5.5 採用中**
+
+**Repo：** https://github.com/OpenBMB/VoxCPM
+**性質：** TTS（語音合成）— AutoVtuber「聲音層」核心缺塊
+**授權：** Apache 2.0（商用免授權）
+**支援語言：** 30 種 + 9 種中文方言（粵/閩南/吳/川/陝/魯/豫/津/東北）
+**核心能力：**
+- **Voice Design**：純自然語言描述生聲（「(18歲、安靜內向、聲音偏沙啞)」）
+- **Voice Cloning**：上傳 reference audio 克隆音色
+- **Ultimate Cloning**：reference audio + transcript 完美復刻
+- **Streaming**：RTF 0.30 (RTX 4090)；0.5B variant 估 3060 仍可即時
+- **OpenAI 相容**：`/v1/audio/speech` endpoint，未來 MVP7 chat runtime 直接用
+
+#### 為什麼選 VoxCPM 而非其他 TTS
+
+| TTS 候選 | 中文 | Voice Design | 商用 | VRAM | 採用否 |
+|---|---|---|---|---|---|
+| **VoxCPM-0.5B** | ✅ 普通話+9方言 | ✅ | Apache 2.0 | ~5GB | ⭐ **選定** |
+| CosyVoice2 | ✅ | ⚠️ 部分 | Apache 2.0 | ~7GB | 備案 |
+| F5-TTS | ⚠️ | ❌ | CC-BY-NC | ~6GB | ❌ 非商用 |
+| GPT-SoVITS | ✅ | ⚠️ | MIT | ~4GB | 中文好但需 fine-tune |
+| ChatTTS | ⚠️ | ❌ | CC-BY-NC | ~4GB | ❌ 非商用 |
+| MeloTTS | ✅ | ❌ | MIT | ~2GB | 沒 Voice Design |
+| Edge-TTS | ✅ | ❌ | Microsoft | 0 (cloud) | 無 voice design + 雲端依賴 |
+
+VoxCPM 唯一同時滿足：商用 ✅、中文 ✅、Voice Design ✅、12GB 內可跑 ✅。
+
+#### 對 AutoVtuber 的整合規劃
+
+**MVP5.5（立即執行）：聲音預覽 WAV**
+- pipeline 末端加 Stage 4：persona 七章節 → VoxCPM 自然語言聲音描述
+- 用 catchphrase 當文字 → 生成 5-10s `<basename>_voice_sample.wav`
+- 輸出檔變 **5 個**：`.vrm` + `_concept.png` + `_persona.md` + `_persona_runtime.json` + `_voice_sample.wav`
+- 工時：~4 hr
+
+**MVP6**：`persona_runtime.json` 加 `voice_profile` 欄位
+- 把「persona → VoxCPM voice description」結構化存進 runtime JSON
+- 為 MVP7 chat 留接口
+- 工時：~1 hr
+
+**MVP7**：完整 VTuber runtime（願景）
+- 使用者跟剛生角色對話：LLM reply → VoxCPM 講話 → VRM blendshape 動嘴
+- 對標 Open-LLM-VTuber 但 VRM not Live2D + 自家 TTS
+
+#### VoxCPM 整合 DO/DON'T（依規則先讀文件）
+
+| 主題 | DO ✅ | DON'T ❌ |
+|---|---|---|
+| 變體選擇 | VoxCPM-**0.5B** 給 12GB GPU 安全 | VoxCPM2 (2B/8GB) 跟 SDXL 共處會 OOM |
+| ModelLoader | 加 `ModelKind.VOX_TTS` 序列化 | 跟 SDXL/TripoSR 同時駐留 GPU |
+| Voice Design | `"(描述) 文字"` 格式（描述放最前括號）| 把描述混在正文中（model 不認）|
+| PyTorch 版本 | 升 2.5.0 前先驗 SDXL/TripoSR 不破 | 盲升 |
+| Python | 我們 3.12 ✓ | <3.10 或 ≥3.13 |
+| Fallback | TTS 失敗只跳過 wav 不擋 VRM | 讓 voice 步驟阻斷主 pipeline |
+| 音檔位置 | 跟 .vrm 同目錄 `output/<basename>_voice_sample.wav` | 散落各處 |
+| 採樣率 | 直接用 24kHz output（0.5B variant） | 強制升頻 |
+
+---
+
 ### Open-LLM-VTuber（MIT，Live2D-only）
 **Repo：** https://github.com/Open-LLM-VTuber/Open-LLM-VTuber
 **性質：** 互補產品 — 我們負責「製作 VRM」，他們負責「Runtime 對話（ASR + LLM + TTS + Live2D 渲染）」
@@ -437,13 +496,14 @@ G:\claude專案資料夾\AutoVtuber\
 
 #### 對 Roadmap 的具體建議
 
-| Phase | 借鑑做什麼 | 估時 |
-|---|---|---|
-| **MVP5** | persona 加 `to_llm_system_prompt()` + emotion trigger dict | ~2 hr |
-| **MVP6** | LLM provider 抽象層（介面 + Ollama/OpenAI 兩 backend）| ~6 hr |
-| **MVP7（願景）** | 自建 VRM runtime（fork + three-vrm.js + VRM blendshape mapping）| ~3-5 天 |
+| Phase | 借鑑做什麼 | 估時 | 狀態 |
+|---|---|---|---|
+| ~~MVP5~~ | persona 加 `to_llm_system_prompt()` + emotion trigger dict | ~2 hr | ✅ 完成 |
+| **MVP5.5** | ⭐ **VoxCPM 聲音預覽**（persona → 自然語言聲音描述 → 5-10s WAV）| ~4 hr | 🔄 進行中 |
+| **MVP6** | persona_runtime.json 加 voice_profile 欄位 + LLM provider 抽象 | ~6 hr | 規劃中 |
+| **MVP7（願景）** | 自建 VRM runtime（VRM viewer + LLM chat + VoxCPM TTS + blendshape sync）| ~3-5 天 | 規劃中 |
 
-**最終生態願景**：AutoVtuber 出的 VRM + 自建 runtime → 使用者下載 V皮直接能對話互動，成為完整「製作 + 運行」雙生態。
+**最終生態願景**：AutoVtuber 出的 VRM + persona + voice + 自建 runtime → 使用者下載 V皮直接能對話互動，成為完整「製作 + 運行」雙生態。
 
 ---
 
@@ -594,6 +654,7 @@ for uv_pixel in face_skin_texture:
 | 2026-06-04 | v3 修復：`_STYLE_BACKGROUND` 全面改寫（CYBERPUNK 不再用「賽博城市夜行者」）+ `_STYLE_SIGNATURE_PROP` + regex trope validator + `## 簽名 Prop` 章節 → Originality 5.5→8.2（+2.7）|
 | 2026-06-04 | **MVP5 完成** — `persona_runtime.py`：`to_llm_system_prompt()` ≤500 字 + `extract_emotion_triggers()` 中文觸發詞→VRM blendshape preset 字典 + orchestrator 自動存 `<basename>_persona_runtime.json`（10 個 tests + 32 個整合測試全綠）|
 | 2026-06-04 | 借鑑 Open-LLM-VTuber 設計（persona 雙用：閱讀 + 餵下游 chat LLM），為 MVP6 LLM provider 抽象 + MVP7 自建 VRM runtime 留接口 |
+| 2026-06-05 | **MVP5.5 啟動**：採用 **VoxCPM-0.5B**（Apache 2.0 / Voice Design / 中文+9 方言 / 5GB VRAM）作為「聲音預覽」層。寫進 AUTOVTUBER.md 外部專案借鑑清單含 DO/DON'T 對照表；架構圖加 Stage 4 + VOXCPM 模型節點 + 第 5 輸出檔（`_voice_sample.wav`）；ModelLoader 加 `ModelKind.VOX_TTS` 序列化規劃 |
 
 ---
 

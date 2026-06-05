@@ -44,8 +44,9 @@ flowchart TD
   MESHFIT["MeshFitter LAB tint\nVRoid base atlas 膚色貼合"]
   RECOLOR["texture_recolor\nhair / eye HSV recolor"]
   ASM["VRMAssembler\nVRM 0.x + ARKit 52 blendshapes"]
-  RUNTIME["persona_runtime\nto_llm_system_prompt ≤500 字\n+ emotion 觸發詞 → blendshape"]
-  OUT(["output/&lt;basename&gt;\n.vrm · _concept.png\n_persona.md · _persona_runtime.json"])
+  RUNTIME["persona_runtime\nto_llm_system_prompt ≤500 字\n+ emotion 觸發詞 → blendshape\n+ voice_profile (MVP6)"]
+  VOICE["voice_generator (MVP5.5)\nVoxCPM-0.5B Voice Design\n5-10s WAV from persona"]
+  OUT(["output/&lt;basename&gt;\n.vrm · _concept.png\n_persona.md · _persona_runtime.json\n_voice_sample.wav (MVP5.5)"])
   HW[/"HardwareGuard\nVRAM/溫度/RAM 1Hz 監控"/]
   ML[/"ModelLoader\nacquire(ModelKind) 序列化"/]
 
@@ -53,16 +54,20 @@ flowchart TD
   OLLAMA --> PROMPT
   OLLAMA --> PERSONA
   PERSONA --> RUNTIME
+  PERSONA --> VOICE
   PROMPT --> SDXL --> CONCEPT
   CONCEPT --> ASSERT
   ASSERT -->|FAIL| RETRY --> SDXL
   ASSERT -->|PASS| TRIPO
   TRIPO --> MESHFIT --> RECOLOR --> ASM --> OUT
   RUNTIME --> OUT
+  VOICE --> OUT
   HW -.監控.-> SDXL
   HW -.監控.-> TRIPO
+  HW -.監控.-> VOICE
   ML -.單模型駐留.-> SDXL
   ML -.單模型駐留.-> TRIPO
+  ML -.單模型駐留.-> VOICE
 ```
 
 **設計原則**：
@@ -122,6 +127,7 @@ python -m autovtuber # 跨平台
 - `_concept.png` — SDXL 概念圖
 - `_persona.md` — 七章節中文人設（基本資料 / 個性 / 簽名 Prop / 背景 / 興趣 / 口頭禪 / 直播風格 / 互動方式）
 - `_persona_runtime.json` — **MVP5** chat-ready 設定（≤500 字 system prompt + 中文→blendshape emotion 字典）
+- `_voice_sample.wav` — **MVP5.5** VoxCPM 聲音預覽（10s 音檔，符合 persona 個性的合成聲音）
 
 ## License
 

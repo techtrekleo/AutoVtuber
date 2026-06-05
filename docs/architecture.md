@@ -41,6 +41,10 @@ flowchart TB
         VA[VRMAssembler<br/>VRM 0.x + ARKit 52<br/>Perfect Sync blendshapes]
     end
 
+    subgraph STAGE4["🟣 Stage 4 — 聲音預覽 ⭐ MVP5.5"]
+        VG[VoiceGenerator<br/>VoxCPM-0.5B<br/>Voice Design from persona<br/>5-10s WAV]
+    end
+
     subgraph WORKERS["⚙️ Qt Workers ✅"]
         JW[JobWorker QThread]
         MW[MonitorWorker QThread]
@@ -54,13 +58,15 @@ flowchart TB
         REMBG[(rembg u2net.onnx<br/>176MB)]
         IPA_W[(IP-Adapter<br/>3.3GB optional)]
         OLLAMA[(Ollama<br/>gemma4:e2b 7.2GB<br/>qwen2.5:3b 1.9GB)]
+        VOXCPM[(openbmb/VoxCPM-0.5B<br/>~2.5GB HF cache<br/>5GB VRAM at inference<br/>★ MVP5.5)]
     end
 
-    subgraph OUT_GROUP["📤 輸出（4 個檔案）✅"]
+    subgraph OUT_GROUP["📤 輸出（5 個檔案）✅"]
         OUT_VRM[(.vrm)]
         OUT_PNG[(_concept.png)]
         OUT_MD[(_persona.md)]
         OUT_JSON[(_persona_runtime.json<br/>★ MVP5)]
+        OUT_WAV[(_voice_sample.wav<br/>★ MVP5.5)]
     end
 
     subgraph PRESETS["📚 角色庫 + Wizard ✅"]
@@ -102,9 +108,11 @@ flowchart TB
     HG -.threading.Event.-> ML
     HG -.threading.Event.-> FG
     HG -.threading.Event.-> I23
+    HG -.threading.Event.-> VG
     ML -.序列化.-> OLLAMA
     ML -.序列化.-> SDXL_W
     ML -.序列化.-> TSR_W
+    ML -.序列化.-> VOXCPM
     HG --> MW
     MW --> UI
 
@@ -122,6 +130,7 @@ flowchart TB
     style STAGE2 fill:#e0f0ff
     style STAGE25 fill:#fff8e0
     style STAGE3 fill:#ffe8d0
+    style STAGE4 fill:#f0e0ff
     style WORKERS fill:#e0ffe0
     style DATA fill:#fffde0
     style OUT_GROUP fill:#e8ffe8
