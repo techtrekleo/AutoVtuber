@@ -82,6 +82,7 @@ class Orchestrator:
         persona_generator: PersonaGenerator | None = None,
         image_to_3d: ImageTo3D | None = None,
         mesh_fitter: MeshFitter | None = None,
+        voice_generator=None,   # MVP5.5：VoiceGenerator | None；可選，None 則跳過 Stage 4
     ):
         self._paths = paths
         self._guard = guard
@@ -94,6 +95,7 @@ class Orchestrator:
         self._persona = persona_generator or PersonaGenerator()
         self._i23 = image_to_3d
         self._mf = mesh_fitter
+        self._vg = voice_generator
 
     def run_concept(
         self,
@@ -283,6 +285,44 @@ class Orchestrator:
                 )
             )
             record.stages["03_vrm_assemble"] = t.elapsed_seconds
+
+            # ---------------- Stage 4 (MVP5.5): Voice preview ---------------- #
+            # 非阻塞 — 失敗只 log 不擋主 pipeline
+            if self._vg is not None:
+                try:
+                    self._guard.check_or_raise()
+                except SafetyAbort:
+                    _log.warning("Voice stage skipped due to safety abort earlier in run")
+                else:
+                    with StageTimer("04_voice_preview") as t:
+                        try:
+                            from .persona_runtime import build_persona_runtime
+                            rt = build_persona_runtime(persona_md)
+                            voice_out = self._paths.output / f"{spec.output_basename}_voice_sample.wav"
+                            vres = self._vg.generate(spec.form, rt, voice_out)
+                            # 把 voice_description 寫回 runtime JSON（MVP5.5 → MVP6 接口）
+                            try:
+                                from .persona_runtime import save_persona_runtime
+                                rt.voice_profile = vres.voice_description
+                                rt_path = self._paths.output / f"{spec.output_basename}_persona_runtime.json"
+                                save_persona_runtime(rt, rt_path)
+                            except Exception:  # noqa: BLE001
+                                _log.exception("Failed to update persona_runtime with voice_profile")
+                            _peak("04_voice_preview")
+                            ok = vres.wav_path is not None
+                        except Exception as e:  # noqa: BLE001
+                            _log.warning("Stage 4 voice gen crashed ({}: {}) — pipeline continues",
+                                         type(e).__name__, e)
+                            ok = False
+                    result.append_stage(
+                        StageResult(
+                            name="04_voice_preview",
+                            succeeded=ok,
+                            elapsed_seconds=t.elapsed_seconds,
+                            error_message=None if ok else "voice gen failed; non-blocking",
+                        )
+                    )
+                    record.stages["04_voice_preview"] = t.elapsed_seconds
 
             # ---------------- 完成 ---------------- #
             result.succeeded = True

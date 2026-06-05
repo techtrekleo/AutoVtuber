@@ -28,6 +28,7 @@ class ModelKind(Enum):
     SDXL = "sdxl"
     INSIGHT_FACE = "insightface"  # CPU only，但仍走同 loader 介面以統一管理
     TRIPO_SR = "triposr"          # Image-to-3D (TripoSR / stabilityai)
+    VOX_TTS = "voxcpm"            # TTS (VoxCPM-0.5B / openbmb)
     NONE = "none"
 
 
@@ -37,6 +38,7 @@ _VRAM_BUDGET_GB: dict[ModelKind, float] = {
     ModelKind.SDXL: 10.5,
     ModelKind.INSIGHT_FACE: 0.0,  # CPU
     ModelKind.TRIPO_SR: 6.0,      # 官方 README 稱 ~6GB；marching cubes 走 CPU shim
+    ModelKind.VOX_TTS: 5.0,       # VoxCPM-0.5B 官方 ~5GB
     ModelKind.NONE: 0.0,
 }
 

@@ -58,6 +58,7 @@ class PersonaRuntime:
     signature_prop: str | None         # 簽名物件（可在 chat 中引用）
     audience_form_of_address: str | None  # 怎麼稱呼觀眾（如「testB的朋友」）
     emotion_triggers: dict[str, str]   # 中文觸發詞 → VRM blendshape preset
+    voice_profile: str | None = None   # MVP5.5：VoxCPM 自然語言聲音描述（給 MVP7 chat runtime 用）
 
 
 # ---------------- 萃取邏輯 ---------------- #
