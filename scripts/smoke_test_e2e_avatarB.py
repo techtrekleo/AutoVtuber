@@ -31,6 +31,7 @@ def main() -> int:
     from autovtuber.pipeline.persona_generator import PersonaGenerator
     from autovtuber.pipeline.prompt_builder import PromptBuilder
     from autovtuber.pipeline.vrm_assembler import VRMAssembler
+    from autovtuber.pipeline.voice_generator import VoiceGenerator
     from autovtuber.safety.hardware_guard import HardwareGuard, precheck_hardware_or_exit
     from autovtuber.safety.health_log import HealthLog
     from autovtuber.safety.model_loader import ModelLoader
@@ -64,10 +65,12 @@ def main() -> int:
         persona = PersonaGenerator(preferred_model="qwen2.5:3b")
         i23 = ImageTo3D(loader, guard, paths.models, mc_resolution=128)
         mf = MeshFitter(mode="tint", tint_strength=0.5)
+        vg = VoiceGenerator(loader, guard)  # MVP5.5：VoxCPM-0.5B Stage 4
         health = HealthLog(paths.logs)
         orch = Orchestrator(
             paths, guard, loader, pb, fg, fa, va, health,
             persona_generator=persona, image_to_3d=i23, mesh_fitter=mf,
+            voice_generator=vg,
         )
 
         # AvatarSample_B + 不同表單參數測廣度

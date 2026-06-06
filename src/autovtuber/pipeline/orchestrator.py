@@ -297,7 +297,10 @@ class Orchestrator:
                     with StageTimer("04_voice_preview") as t:
                         try:
                             from .persona_runtime import build_persona_runtime
-                            rt = build_persona_runtime(persona_md)
+                            # persona_md 來自 ConceptResult（run_full_from_concept 收到的）；
+                            # 若直接 caller 進 run() 則來自 stage 1 的局部變數
+                            persona_md_text = concept.persona_md
+                            rt = build_persona_runtime(persona_md_text)
                             voice_out = self._paths.output / f"{spec.output_basename}_voice_sample.wav"
                             vres = self._vg.generate(spec.form, rt, voice_out)
                             # 把 voice_description 寫回 runtime JSON（MVP5.5 → MVP6 接口）
